@@ -4,7 +4,7 @@ const Fuse = require('fuse.js');
 const { Hono } = require('hono');
 const { serve } = require('@hono/node-server');
 
-console.log("=== 🚗 PAPA ROULAGE V3.8 (BASE DE DONNÉES) 🚗 ===");
+console.log("=== 🚗 PAPA ROULAGE V3.9 (50 AXES) 🚗 ===");
 
 // ==========================================
 // 0. CONNEXION À LA BASE POSTGRESQL
@@ -34,9 +34,10 @@ const pool = new Pool({
 })();
 
 // ==========================================
-// 1. DICTIONNAIRE COMPLET (20 AXES)
+// 1. DICTIONNAIRE COMPLET (50 AXES)
 // ==========================================
 const rues = [
+  // GRANDS AXES (12)
   { nom: "Boulevard du 30 Juin", alias: ["30 juin", "bd du 30", "trente juin", "bld 30", "grand boulevard", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin", "gombé", "gombe"] },
   { nom: "Avenue Kasa-Vubu", alias: ["kasa vubu", "kasa", "av kasa", "kasavubu", "rond-point victoire", "victoire", "central", "bandal", "mariage"] },
   { nom: "Boulevard Triomphal", alias: ["triomphal", "bd triomphal", "triomphale", "palais du peuple", "stade des martyrs", "martyrs"] },
@@ -49,6 +50,8 @@ const rues = [
   { nom: "Boulevard Congo Japon (Poids Lourds)", alias: ["poids lourds", "poids lourd", "congo japon", "congo-japon", "gare centrale", "baramoto", "kingabwa"] },
   { nom: "Avenue du Tourisme (Route de Kinsuka)", alias: ["tourisme", "av du tourisme", "kinsuka", "pompage", "mimosa", "fleuve"] },
   { nom: "Avenue Kimwenza", alias: ["kimwenza", "yolo", "av kimwenza", "kapela", "kala"] },
+  
+  // PETITES ARTÈRES (8)
   { nom: "Avenue du Commerce", alias: ["commerce", "av commerce", "grande poste", "kin marche", "kinmarché", "poste"] },
   { nom: "Avenue de la Justice", alias: ["justice", "palais de justice", "cour", "av justice"] },
   { nom: "Avenue des Huileries", alias: ["huileries", "huilco", "sodeico", "av huileries", "huile"] },
@@ -56,10 +59,56 @@ const rues = [
   { nom: "Avenue Flambeau", alias: ["flambeau", "clair", "lumière", "av flambeau"] },
   { nom: "Rond-point Forescom", alias: ["forescom", "forecom", "rp forescom"] },
   { nom: "Avenue de l'École", alias: ["ecole", "école", "av ecole", "lycee", "lycée"] },
-  { nom: "Avenue du Port", alias: ["port", "av port", "beach", "ngobila", "beach ngobila"] }
+  { nom: "Avenue du Port", alias: ["port", "av port", "beach", "ngobila", "beach ngobila"] },
+  
+  // MARCHÉS (5)
+  { nom: "Marché Central", alias: ["marché central", "grand marché", "central"] },
+  { nom: "Marché de la Liberté", alias: ["marché liberté", "liberté", "marché gambela", "gambela"] },
+  { nom: "Marché Gambela", alias: ["gambela", "marche gambela"] },
+  { nom: "Marché de Matonge", alias: ["matonge", "marché matonge"] },
+  { nom: "Marché de Ndjili", alias: ["marché ndjili", "ndjili marché"] },
+  
+  // HÔPITAUX & CLINIQUES (4)
+  { nom: "Clinique Ngaliema", alias: ["ngaliema", "clinique ngaliema", "hôpital ngaliema"] },
+  { nom: "Hôpital du Cinquantenaire", alias: ["cinquantenaire", "hôpital 50 ans", "50 ans"] },
+  { nom: "Hôpital de l'ONATRA", alias: ["onatra", "hôpital onatra"] },
+  { nom: "Clinique Kinoise", alias: ["clinique kinoise", "kinoise"] },
+  
+  // ÉCOLES & UNIVERSITÉS (5)
+  { nom: "INSS", alias: ["inss", "inss kasa vubu"] },
+  { nom: "ISTA", alias: ["ista", "ista ngaba"] },
+  { nom: "ISC", alias: ["isc", "isc kin"] },
+  { nom: "Lycée Bosangani", alias: ["bosangani", "lycee bosangani"] },
+  { nom: "Collège Boboto", alias: ["boboto", "college boboto"] },
+  
+  // CARREFOURS STRATÉGIQUES (4)
+  { nom: "Carrefour Lemba", alias: ["lemba", "carrefour lemba", "lemba marche"] },
+  { nom: "Carrefour Mbanza Lemba", alias: ["mbanza lemba", "mbanza"] },
+  { nom: "Carrefour Kingasani", alias: ["kingasani carrefour", "kingasani"] },
+  { nom: "Carrefour Masina", alias: ["masina carrefour", "masina"] },
+  
+  // ROND-POINTS SUPPLÉMENTAIRES (5)
+  { nom: "Rond-point Kintambo", alias: ["kintambo", "rp kintambo", "rond point kintambo"] },
+  { nom: "Rond-point Kampeta", alias: ["kampeta", "rp kampeta"] },
+  { nom: "Rond-point Righini", alias: ["righini", "rp righini"] },
+  { nom: "Rond-point Mwana Mbuyi", alias: ["mwana mbuyi", "rp mwana mbuyi"] },
+  { nom: "Rond-point Sozacom", alias: ["sozacom", "rp sozacom"] },
+  
+  // AUTRES POINTS DE REPÈRE (7)
+  { nom: "Stade des Martyrs", alias: ["martyrs", "stade martyrs", "stade"] },
+  { nom: "Stade Tata Raphaël", alias: ["tata raphaël", "tata", "tata raphael"] },
+  { nom: "Palais de la Nation", alias: ["palais nation", "palais"] },
+  { nom: "Tour de l'Échangeur", alias: ["tour echangeur", "tour"] },
+  { nom: "Gare de Limete", alias: ["gare limete", "limete gare"] },
+  { nom: "Beach Ngobila", alias: ["beach", "ngobila"] },
+  { nom: "Kinshasa Golf", alias: ["golf", "golf kinshasa"] }
 ];
 
+// ==========================================
+// 2. CONFIGURATION DES PRIORITÉS
+// ==========================================
 const priorites = [
+  // Grands axes (12)
   { mots: ["bd du 30", "30 juin", "bld 30", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin"], rue: "Boulevard du 30 Juin" },
   { mots: ["kasa vubu", "kasa", "kasavubu", "victoire"], rue: "Avenue Kasa-Vubu" },
   { mots: ["ngaba", "triangle"], rue: "Rond-point Ngaba" },
@@ -72,6 +121,8 @@ const priorites = [
   { mots: ["poids lourds", "poids lourd", "congo japon", "congo-japon", "baramoto"], rue: "Boulevard Congo Japon (Poids Lourds)" },
   { mots: ["tourisme", "kinsuka", "mimosa", "pompage"], rue: "Avenue du Tourisme (Route de Kinsuka)" },
   { mots: ["kimwenza", "kapela"], rue: "Avenue Kimwenza" },
+  
+  // Petites artères (8)
   { mots: ["commerce", "grande poste", "kin marche", "kinmarché"], rue: "Avenue du Commerce" },
   { mots: ["justice", "palais de justice", "cour"], rue: "Avenue de la Justice" },
   { mots: ["huileries", "huilco", "sodeico", "huile"], rue: "Avenue des Huileries" },
@@ -79,7 +130,49 @@ const priorites = [
   { mots: ["flambeau", "clair"], rue: "Avenue Flambeau" },
   { mots: ["forescom", "forecom", "rp forescom"], rue: "Rond-point Forescom" },
   { mots: ["ecole", "école", "lycee", "lycée"], rue: "Avenue de l'École" },
-  { mots: ["port", "beach", "ngobila"], rue: "Avenue du Port" }
+  { mots: ["port", "beach", "ngobila"], rue: "Avenue du Port" },
+  
+  // Marchés (5)
+  { mots: ["marché central", "grand marché"], rue: "Marché Central" },
+  { mots: ["marché liberté", "liberté", "gambela"], rue: "Marché de la Liberté" },
+  { mots: ["gambela"], rue: "Marché Gambela" },
+  { mots: ["matonge"], rue: "Marché de Matonge" },
+  { mots: ["marché ndjili", "ndjili marché"], rue: "Marché de Ndjili" },
+  
+  // Hôpitaux (4)
+  { mots: ["ngaliema", "clinique ngaliema"], rue: "Clinique Ngaliema" },
+  { mots: ["cinquantenaire", "50 ans"], rue: "Hôpital du Cinquantenaire" },
+  { mots: ["onatra"], rue: "Hôpital de l'ONATRA" },
+  { mots: ["clinique kinoise", "kinoise"], rue: "Clinique Kinoise" },
+  
+  // Écoles (5)
+  { mots: ["inss"], rue: "INSS" },
+  { mots: ["ista"], rue: "ISTA" },
+  { mots: ["isc"], rue: "ISC" },
+  { mots: ["bosangani"], rue: "Lycée Bosangani" },
+  { mots: ["boboto"], rue: "Collège Boboto" },
+  
+  // Carrefours (4)
+  { mots: ["lemba", "carrefour lemba"], rue: "Carrefour Lemba" },
+  { mots: ["mbanza lemba", "mbanza"], rue: "Carrefour Mbanza Lemba" },
+  { mots: ["kingasani carrefour"], rue: "Carrefour Kingasani" },
+  { mots: ["masina carrefour"], rue: "Carrefour Masina" },
+  
+  // Rond-points supplémentaires (5)
+  { mots: ["kintambo", "rp kintambo"], rue: "Rond-point Kintambo" },
+  { mots: ["kampeta", "rp kampeta"], rue: "Rond-point Kampeta" },
+  { mots: ["righini", "rp righini"], rue: "Rond-point Righini" },
+  { mots: ["mwana mbuyi", "rp mwana mbuyi"], rue: "Rond-point Mwana Mbuyi" },
+  { mots: ["sozacom", "rp sozacom"], rue: "Rond-point Sozacom" },
+  
+  // Autres (7)
+  { mots: ["martyrs", "stade martyrs"], rue: "Stade des Martyrs" },
+  { mots: ["tata raphaël", "tata"], rue: "Stade Tata Raphaël" },
+  { mots: ["palais nation", "palais"], rue: "Palais de la Nation" },
+  { mots: ["tour echangeur", "tour"], rue: "Tour de l'Échangeur" },
+  { mots: ["gare limete"], rue: "Gare de Limete" },
+  { mots: ["beach"], rue: "Beach Ngobila" },
+  { mots: ["golf kinshasa", "golf"], rue: "Kinshasa Golf" }
 ];
 
 const fuse = new Fuse(rues, {
@@ -89,10 +182,9 @@ const fuse = new Fuse(rues, {
 });
 
 // ==========================================
-// 2. FONCTIONS BASE DE DONNÉES
+// 3. FONCTIONS BASE DE DONNÉES
 // ==========================================
 
-// Sauvegarder un signalement
 async function sauvegarderSignalement(rue, etat) {
   const maintenant = new Date();
   const jour = maintenant.toLocaleDateString('fr-FR', { weekday: 'long' });
@@ -109,7 +201,6 @@ async function sauvegarderSignalement(rue, etat) {
   }
 }
 
-// Récupérer le dernier signalement d'une rue
 async function getDernierSignalement(rue) {
   try {
     const result = await pool.query(
@@ -129,22 +220,18 @@ async function getDernierSignalement(rue) {
   }
 }
 
-// Statistiques
 async function getStats() {
   try {
-    // Top 5 des rues les plus signalées
     const topRues = await pool.query(
       `SELECT rue, COUNT(*) as total FROM signalements 
        GROUP BY rue ORDER BY total DESC LIMIT 5`
     );
     
-    // Heure de pointe
     const heurePointe = await pool.query(
       `SELECT heure, COUNT(*) as total FROM signalements 
        GROUP BY heure ORDER BY total DESC LIMIT 1`
     );
     
-    // Jour le plus chargé
     const jourPointe = await pool.query(
       `SELECT jour, COUNT(*) as total FROM signalements 
        GROUP BY jour ORDER BY total DESC LIMIT 1`
@@ -158,17 +245,16 @@ async function getStats() {
 }
 
 // ==========================================
-// 3. LE BOT TELEGRAM
+// 4. LE BOT TELEGRAM
 // ==========================================
 const bot = new Telegraf(process.env.BOT_TOKEN || '8058425054:AAE8AzAJv6wZgGPZ6zMyIqJjLrX-dmdh4a8');
 
-// Commande /start
 bot.start((ctx) => {
-  ctx.reply(`🇨🇩 PAPA ROULAGE V3.8 - BASE DE DONNÉES ACTIVE ! 🇨🇩
+  ctx.reply(`🇨🇩 PAPA ROULAGE V3.9 - 50 AXES DISPONIBLES ! 🇨🇩
 
 📢 SIGNALER UN PROBLÈME :
 "Bouchon à Commerce"
-"Accident aux Huileries"
+"Accident à Matonge"
 
 🔍 CONSULTER L'ÉTAT :
 "/etat Commerce" ou "etat commerce"
@@ -177,10 +263,39 @@ bot.start((ctx) => {
 📋 LISTE : /liste
 ❓ AIDE : /aide
 
-${rues.length} axes disponibles ! 🚗`);
+50 lieux stratégiques couverts ! 🚗`);
 });
 
-// Commande /stats
+bot.command('aide', (ctx) => {
+  ctx.reply(`🇨🇩 PAPA ROULAGE V3.9 🇨🇩
+
+📢 SIGNALER :
+"Bouchon à Commerce"
+"Accident à Matonge"
+"Fluide à Kintambo"
+
+🔍 CONSULTER :
+/etat [lieu]  ou  "etat [lieu]"
+
+📊 STATISTIQUES : /stats
+
+📍 CATÉGORIES (50 lieux) :
+• Grands axes : 30 Juin, Kasa-Vubu, Lumumba...
+• Marchés : Central, Liberté, Gambela, Matonge, Ndjili
+• Hôpitaux : Ngaliema, Cinquantenaire, ONATRA
+• Écoles : INSS, ISTA, ISC, Bosangani, Boboto
+• Carrefours : Lemba, Mbanza Lemba, Kingasani, Masina
+• Rond-points : Kintambo, Kampeta, Righini, Mwana Mbuyi, Sozacom
+• Lieux publics : Stades, Palais, Tour, Beach, Golf
+
+💡 Plus on signale, plus les stats sont précises !`);
+});
+
+bot.command('liste', (ctx) => {
+  const listeRues = rues.map(r => `• ${r.nom}`).join('\n');
+  ctx.reply(`📋 TOUS LES AXES RECONNUS (${rues.length}) :\n\n${listeRues}\n\n💡 Utilise les alias : "commerce", "matonge", "ngaliema", "lemba"...`);
+});
+
 bot.command('stats', async (ctx) => {
   const stats = await getStats();
   
@@ -210,34 +325,6 @@ Sois le premier à signaler un bouchon !`);
   ctx.reply(message);
 });
 
-// Commande /aide
-bot.command('aide', (ctx) => {
-  ctx.reply(`🇨🇩 PAPA ROULAGE V3.8 🇨🇩
-
-📢 SIGNALER :
-"Bouchon à Commerce"
-"Accident aux Huileries"
-"Fluide sur Wangata"
-
-🔍 CONSULTER :
-/etat [lieu]  ou  "etat [lieu]"
-
-📊 STATISTIQUES :
-/stats
-
-📍 LIEUX DISPONIBLES (${rues.length}) :
-30 Juin, Kasa-Vubu, Triomphal, Ngaba, Libération, Matadi, Lumumba, Bypass, Université, Poids Lourds, Tourisme, Kimwenza, Commerce, Justice, Huileries, Wangata, Flambeau, Forescom, École, Port
-
-💡 Tous les signalements sont sauvegardés en base de données !`);
-});
-
-// Commande /liste
-bot.command('liste', (ctx) => {
-  const listeRues = rues.map(r => `• ${r.nom}`).join('\n');
-  ctx.reply(`📋 TOUS LES AXES RECONNUS (${rues.length}) :\n\n${listeRues}`);
-});
-
-// Commande /etat officielle
 bot.command('etat', async (ctx) => {
   const texte = ctx.message.text.toLowerCase().replace('/etat', '').trim();
   
@@ -261,7 +348,6 @@ bot.command('etat', async (ctx) => {
   
   if (rueTrouvee) {
     const dernier = await getDernierSignalement(rueTrouvee);
-    
     if (dernier) {
       const minutes = Math.round((Date.now() - dernier.timestamp) / 60000);
       let temps = `⏱️ Signalé il y a ${minutes} min.`;
@@ -276,12 +362,12 @@ bot.command('etat', async (ctx) => {
       ctx.reply(`🤷‍♂️ Aucun signalement pour ${rueTrouvee}. Tout semble fluide !`);
     }
   } else {
-    ctx.reply(`❓ Je n'ai pas reconnu "${texte}".\n\nTape /liste pour voir les ${rues.length} axes.`);
+    ctx.reply(`❓ Je n'ai pas reconnu "${texte}".\n\nTape /liste pour voir les ${rues.length} lieux.`);
   }
 });
 
 // ==========================================
-// TRAITEMENT DES MESSAGES
+// 5. TRAITEMENT DES MESSAGES
 // ==========================================
 bot.on('text', async (ctx) => {
   let texte = ctx.message.text.toLowerCase().trim();
@@ -315,7 +401,7 @@ bot.on('text', async (ctx) => {
         ctx.reply(`🤷‍♂️ Aucun signalement pour ${rueTrouvee}.`);
       }
     } else {
-      ctx.reply(`❓ Je n'ai pas reconnu "${lieu}".\n\nTape /liste pour les lieux.`);
+      ctx.reply(`❓ Je n'ai pas reconnu "${lieu}".\n\nTape /liste pour voir les ${rues.length} lieux.`);
     }
     return;
   }
@@ -363,26 +449,25 @@ bot.on('text', async (ctx) => {
   }
   
   if (!rueTrouvee && etat) {
-    ctx.reply(`❓ "${ctx.message.text}"... mais À QUEL ENDROIT ?\n\nExemples :\n"Bouchon Commerce"\n"Accident Huileries"`);
+    ctx.reply(`❓ "${ctx.message.text}"... mais À QUEL ENDROIT ?\n\nExemples :\n"Bouchon Commerce"\n"Accident Matonge"\n"Fluide Kintambo"`);
     return;
   }
   
   if (!rueTrouvee && !etat) {
-    ctx.reply(`❓ Je n'ai pas bien compris.\n\n• Signalement : "Bouchon Commerce"\n• Consultation : "etat commerce"\n• Liste : /liste`);
+    ctx.reply(`❓ Je n'ai pas bien compris.\n\n• Signalement : "Bouchon Commerce"\n• Consultation : "etat commerce"\n• Liste : /liste\n• Aide : /aide`);
     return;
   }
   
-  // Sauvegarde en base
   await sauvegarderSignalement(rueTrouvee, etat);
   ctx.reply(`✅ REÇU !\n\n📍 ${rueTrouvee}\n🚦 ${etat}\n\nTape "etat ${rueTrouvee}" pour consulter.`);
   console.log(`[LOG] ${rueTrouvee} → ${etat}`);
 });
 
 // ==========================================
-// SERVEUR WEBHOOK
+// 6. SERVEUR WEBHOOK
 // ==========================================
 const app = new Hono();
-app.get('/', (c) => c.text('Papa Roulage V3.8 en ligne ! 🇨🇩'));
+app.get('/', (c) => c.text('Papa Roulage V3.9 en ligne ! 50 axes 🇨🇩'));
 app.post('/webhook', async (c) => {
   try {
     const update = await c.req.json();
@@ -403,7 +488,7 @@ const PORT = process.env.PORT || 3000;
     const url = `https://${hostname}/webhook`;
     await bot.telegram.setWebhook(url);
     console.log(`🔗 Webhook configuré : ${url}`);
-    console.log("🤖 PAPA ROULAGE V3.8 ACTIF !");
+    console.log("🤖 PAPA ROULAGE V3.9 ACTIF !");
     console.log(`📊 ${rues.length} axes disponibles`);
   } catch (err) {
     console.log("⚠️ Erreur webhook :", err.message);
