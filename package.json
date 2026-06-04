@@ -1,0 +1,19 @@
+{
+  "name": "papa-roulage",
+  "version": "1.0.0",
+  "description": "Bot Telegram pour signaler le trafic à Kinshasa",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.4",
+    "fuse.js": "^6.6.2",
+    "hono": "^4.12.23",
+    "telegraf": "^4.15.3"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
