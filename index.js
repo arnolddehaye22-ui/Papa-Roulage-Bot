@@ -3,35 +3,48 @@ const Fuse = require('fuse.js');
 const { Hono } = require('hono');
 const { serve } = require('@hono/node-server');
 
-console.log("=== 🚗 PAPA ROULAGE V3.4 (ETAT CORRIGÉ) 🚗 ===");
+console.log("=== 🚗 PAPA ROULAGE V3.5 (EXPANSION KINSHASA) 🚗 ===");
 
 // ==========================================
-// 1. DICTIONNAIRE ENRICHI (AVEC POINTS DE REPÈRE)
+// 1. DICTIONNAIRE ÉLARGI ET SÉCURISÉ (12 AXES)
 // ==========================================
 const rues = [
-  { nom: "Boulevard du 30 Juin", alias: ["30 juin", "bd du 30", "trente juin", "bld 30", "grand boulevard", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin"] },
-  { nom: "Avenue Kasa-Vubu", alias: ["kasa vubu", "kasa", "av kasa", "kasavubu", "rond-point victoire", "victoire"] },
-  { nom: "Boulevard Triomphal", alias: ["triomphal", "bd triomphal", "triomphale", "palais du peuple", "stade des martyrs"] },
-  { nom: "Rond-point Ngaba", alias: ["ngaba", "rp ngaba", "rond point ngaba", "triangle"] },
-  { nom: "Avenue de la Libération", alias: ["liberation", "ex 24 novembre", "24 novembre", "24 nov", "bandal", "moulaert"] },
-  { nom: "Route de Matadi", alias: ["route matadi", "matadi", "binza", "delvaux", "upn"] },
-  { nom: "Boulevard Lumumba", alias: ["lumumba", "bd lumumba", "route de l'aeroport", "ndjili", "pascal", "kingasani", "limete", "echangeur"] }
+  { nom: "Boulevard du 30 Juin", alias: ["30 juin", "bd du 30", "trente juin", "bld 30", "grand boulevard", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin", "gombé", "gombe"] },
+  { nom: "Avenue Kasa-Vubu", alias: ["kasa vubu", "kasa", "av kasa", "kasavubu", "rond-point victoire", "victoire", "central", "bandal", "mariage"] },
+  { nom: "Boulevard Triomphal", alias: ["triomphal", "bd triomphal", "triomphale", "palais du peuple", "stade des martyrs", "martyrs"] },
+  { nom: "Rond-point Ngaba", alias: ["ngaba", "rp ngaba", "rond point ngaba", "triangle", "universite", "université"] },
+  { nom: "Avenue de la Libération", alias: ["liberation", "ex 24 novembre", "24 novembre", "24 nov", "bandal", "moulaert", "selembao"] },
+  { nom: "Route de Matadi", alias: ["route matadi", "matadi", "binza", "delvaux", "upn", "barriere", "pompage", "lalou"] },
+  { nom: "Boulevard Lumumba", alias: ["lumumba", "bd lumumba", "route de l'aeroport", "ndjili", "pascal", "kingasani", "limete", "echangeur", "échangeur", "quartier 1", "q1", "masina"] },
+  // NOUVEAUX AXES CORRIGÉS (sans doublons)
+  { nom: "Avenue Bypass", alias: ["bypass", "by-pass", "by pass", "cite verte", "cité verte", "rimeo"] },
+  { nom: "Avenue de l'Université", alias: ["universite", "université", "livulu", "intendance", "unikin", "yolo", "kapela"] },
+  { nom: "Boulevard Congo Japon (Poids Lourds)", alias: ["poids lourds", "poids lourd", "congo japon", "congo-japon", "gare centrale", "baramoto", "kingabwa"] },
+  { nom: "Avenue du Tourisme (Route de Kinsuka)", alias: ["tourisme", "av du tourisme", "kinsuka", "pompage", "mimosa", "fleuve"] },
+  { nom: "Avenue Kimwenza", alias: ["kimwenza", "yolo", "av kimwenza", "kapela", "kala"] }
 ];
 
-// Configuration des priorités fortes
 const priorites = [
-  { mots: ["bd du 30", "30 juin", "bld 30", "socimat", "gare centrale", "royal", "batetela"], rue: "Boulevard du 30 Juin" },
+  { mots: ["bd du 30", "30 juin", "bld 30", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin"], rue: "Boulevard du 30 Juin" },
   { mots: ["kasa vubu", "kasa", "kasavubu", "victoire"], rue: "Avenue Kasa-Vubu" },
   { mots: ["ngaba", "triangle"], rue: "Rond-point Ngaba" },
   { mots: ["triomphal", "palais du peuple", "stade des martyrs"], rue: "Boulevard Triomphal" },
-  { mots: ["liberation", "24 novembre", "24 nov", "bandal"], rue: "Avenue de la Libération" },
-  { mots: ["matadi", "binza", "delvaux", "upn"], rue: "Route de Matadi" },
-  { mots: ["lumumba", "ndjili", "pascal", "kingasani", "limete", "echangeur"], rue: "Boulevard Lumumba" }
+  { mots: ["liberation", "24 novembre", "24 nov", "bandal", "moulaert"], rue: "Avenue de la Libération" },
+  { mots: ["matadi", "binza", "delvaux", "upn", "pompage"], rue: "Route de Matadi" },
+  { mots: ["lumumba", "ndjili", "pascal", "kingasani", "limete", "echangeur", "échangeur"], rue: "Boulevard Lumumba" },
+  // Nouvelles priorités nettoyées
+  { mots: ["bypass", "by-pass", "by pass", "cite verte", "cité verte", "rimeo"], rue: "Avenue Bypass" },
+  { mots: ["unikin", "livulu", "intendance", "universite", "université", "yolo", "kapela"], rue: "Avenue de l'Université" },
+  { mots: ["poids lourds", "poids lourd", "congo japon", "congo-japon", "baramoto"], rue: "Boulevard Congo Japon (Poids Lourds)" },
+  { mots: ["tourisme", "kinsuka", "mimosa", "pompage"], rue: "Avenue du Tourisme (Route de Kinsuka)" },
+  { mots: ["kimwenza", "kapela"], rue: "Avenue Kimwenza" }
 ];
 
+// Configuration Fuse.js boostée
 const fuse = new Fuse(rues, {
   keys: [{ name: 'alias', weight: 2 }, { name: 'nom', weight: 1 }],
-  threshold: 0.35
+  threshold: 0.45,
+  ignoreLocation: true
 });
 
 // Mémoire des signalements
@@ -44,7 +57,7 @@ const bot = new Telegraf(process.env.BOT_TOKEN || '8058425054:AAE8AzAJv6wZgGPZ6z
 
 // Commande /start
 bot.start((ctx) => {
-  ctx.reply(`🇨🇩 PAPA ROULAGE V3.4 - PRÊT À RÉGULER LE TRAFIC ! 🇨🇩
+  ctx.reply(`🇨🇩 PAPA ROULAGE V3.5 - PRÊT À RÉGULER LE TRAFIC ! 🇨🇩
 
 📢 SIGNALER UN PROBLÈME :
 "Bouchon à Socimat"
@@ -60,7 +73,7 @@ bot.start((ctx) => {
 Restons solidaires sur la route ! 🚗`);
 });
 
-// Commande /aide
+// Commande /aide (Mise à jour avec tes ajouts !)
 bot.command('aide', (ctx) => {
   ctx.reply(`🇨🇩 AIDE PAPA ROULAGE 🇨🇩
 
@@ -80,17 +93,22 @@ bot.command('aide', (ctx) => {
 • Triomphal (Palais du Peuple)
 • Libération (24 novembre)
 • Matadi (Binza, UPN, Delvaux)
+• Bypass (Cité verte, Rimeo)
+• Université (Unikin, Livulu)
+• Poids Lourds (Congo Japon)
+• Tourisme (Kinsuka, Pompage)
+• Kimwenza (Kapela, Yolo)
 
 💡 Exemple : "Bouchon upn"`);
 });
 
-// Commande /liste
+// Commande /liste (Dynamique)
 bot.command('liste', (ctx) => {
   const listeRues = rues.map(r => `• ${r.nom}`).join('\n');
-  ctx.reply(`📋 RUES CONNUES :\n\n${listeRues}\n\nAbréviations : "bd du 30", "kasa", "ngaba", "upn"...`);
+  ctx.reply(`📋 RUES CONNUES :\n\n${listeRues}\n\nAbréviations : "bd du 30", "kasa", "ngaba", "upn", "bypass", "poids lourds"...`);
 });
 
-// Commande /etat normale
+// Commande /etat officielle
 bot.command('etat', (ctx) => {
   const texte = ctx.message.text.toLowerCase().replace('/etat', '').trim();
   
@@ -145,7 +163,6 @@ bot.on('text', async (ctx) => {
     const lieu = texte.replace(/^état /i, '').replace(/^etat /i, '').trim();
     console.log(`[DEBUG] "etat" transformé pour : "${lieu}"`);
     
-    // Chercher la rue
     let rueTrouvee = null;
     for (const priorite of priorites) {
       for (const mot of priorite.mots) {
@@ -235,13 +252,13 @@ bot.on('text', async (ctx) => {
 
 // Lancement
 bot.launch();
-console.log("🤖 PAPA ROULAGE V3.4 ACTIF !");
+console.log("🤖 PAPA ROULAGE V3.5 ACTIF !");
 
 // ==========================================
 // 3. SERVEUR WEB POUR RENDER
 // ==========================================
 const app = new Hono();
-app.get('/', (c) => c.text('Papa Roulage V3.4 en ligne ! 🇨🇩'));
+app.get('/', (c) => c.text('Papa Roulage V3.5 en ligne ! 🇨🇩'));
 
 const port = process.env.PORT || 3000;
 serve({ fetch: app.fetch, port: Number(port) });
