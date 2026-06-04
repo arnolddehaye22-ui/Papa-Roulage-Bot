@@ -3,7 +3,7 @@ const Fuse = require('fuse.js');
 const { Hono } = require('hono');
 const { serve } = require('@hono/node-server');
 
-console.log("=== 🚗 PAPA ROULAGE V3.6 (CORRECTIONS FINES) 🚗 ===");
+console.log("=== 🚗 PAPA ROULAGE V3.6 (MODE WEBHOOK) 🚗 ===");
 
 // ==========================================
 // 1. DICTIONNAIRE ÉLARGI (12 AXES)
@@ -51,6 +51,7 @@ const signalements = {};
 // ==========================================
 const bot = new Telegraf(process.env.BOT_TOKEN || '8058425054:AAE8AzAJv6wZgGPZ6zMyIqJjLrX-dmdh4a8');
 
+// Commande /start
 bot.start((ctx) => {
   ctx.reply(`🇨🇩 PAPA ROULAGE V3.6 - PRÊT À RÉGULER LE TRAFIC ! 🇨🇩
 
@@ -68,6 +69,7 @@ bot.start((ctx) => {
 Restons solidaires sur la route ! 🚗`);
 });
 
+// Commande /aide
 bot.command('aide', (ctx) => {
   ctx.reply(`🇨🇩 AIDE PAPA ROULAGE 🇨🇩
 
@@ -96,11 +98,13 @@ bot.command('aide', (ctx) => {
 💡 Exemple : "Bouchon upn"`);
 });
 
+// Commande /liste
 bot.command('liste', (ctx) => {
   const listeRues = rues.map(r => `• ${r.nom}`).join('\n');
   ctx.reply(`📋 RUES CONNUES :\n\n${listeRues}\n\nAbréviations : "bd du 30", "kasa", "ngaba", "upn", "bypass"...`);
 });
 
+// Commande /etat officielle
 bot.command('etat', (ctx) => {
   const texte = ctx.message.text.toLowerCase().replace('/etat', '').trim();
   
@@ -146,7 +150,6 @@ bot.command('etat', (ctx) => {
 
 // ==========================================
 // TRAITEMENT UNIQUE : signalements + "etat" sans slash
-// VERSION CORRIGÉE V3.6
 // ==========================================
 bot.on('text', async (ctx) => {
   let texte = ctx.message.text.toLowerCase().trim();
@@ -173,7 +176,6 @@ bot.on('text', async (ctx) => {
       const s = signalements[rueTrouvee];
       const minutes = Math.round((Date.now() - s.timestamp) / 60000);
       
-      // Harmonisation du calcul du temps
       let temps = `⏱️ Signalé il y a ${minutes} min.`;
       if (minutes === 0) temps = "⏱️ Signalé à l'instant ! 🔥";
       if (minutes === 1) temps = "⏱️ Signalé il y a 1 minute.";
@@ -229,7 +231,7 @@ bot.on('text', async (ctx) => {
     etat = "🟡 RALENTISSEMENT LÉGER";
   }
   
-  // FIX 2 : Si l'utilisateur n'a donné QUE le nom de la rue (pas d'état)
+  // Si l'utilisateur n'a donné QUE le nom de la rue (pas d'état)
   if (rueTrouvee && !etat) {
     if (signalements[rueTrouvee]) {
       const s = signalements[rueTrouvee];
@@ -266,27 +268,50 @@ bot.on('text', async (ctx) => {
 });
 
 // ==========================================
-// LANCEMENT AVEC NETTOYAGE DES CONFLITS
-// ==========================================
-(async () => {
-  try {
-    await bot.telegram.deleteWebhook();
-    await bot.telegram.setWebhook();
-    console.log("🧹 Webhooks nettoyés !");
-  } catch (err) {
-    console.log("⚠️ Nettoyage webhook :", err.message);
-  }
-  
-  bot.launch();
-  console.log("🤖 PAPA ROULAGE V3.6 ACTIF !");
-})();
-
-// ==========================================
-// 3. SERVEUR WEB POUR RENDER
+// SERVEUR WEB HONO AVEC WEBHOOK
 // ==========================================
 const app = new Hono();
+
+// Route principale
 app.get('/', (c) => c.text('Papa Roulage V3.6 en ligne ! 🇨🇩'));
 
-const port = process.env.PORT || 3000;
-serve({ fetch: app.fetch, port: Number(port) });
-console.log(`🌍 Serveur Web sur le port ${port}`);
+// Route webhook pour Telegram
+app.post('/webhook', async (c) => {
+  try {
+    const update = await c.req.json();
+    await bot.handleUpdate(update);
+    return c.text('OK');
+  } catch (err) {
+    console.error('Erreur webhook:', err);
+    return c.text('Error', 500);
+  }
+});
+
+// ==========================================
+// LANCEMENT : Mode Webhook pour Render
+// ==========================================
+const PORT = process.env.PORT || 3000;
+
+(async () => {
+  try {
+    // Nettoie les anciens webhooks
+    await bot.telegram.deleteWebhook();
+    console.log("🧹 Anciens webhooks nettoyés !");
+    
+    // Configure le webhook vers l'URL Render
+    const hostname = process.env.RENDER_EXTERNAL_HOSTNAME || 'papa-roulage-bot.onrender.com';
+    const url = `https://${hostname}/webhook`;
+    await bot.telegram.setWebhook(url);
+    console.log(`🔗 Webhook configuré : ${url}`);
+    
+    console.log("🤖 PAPA ROULAGE V3.6 ACTIF en mode WEBHOOK !");
+  } catch (err) {
+    console.log("⚠️ Erreur webhook :", err.message);
+    console.log("🔄 Fallback en mode polling...");
+    bot.launch();
+  }
+})();
+
+// Lance le serveur HTTP
+serve({ fetch: app.fetch, port: PORT });
+console.log(`🌍 Serveur Web sur le port ${PORT}`);
