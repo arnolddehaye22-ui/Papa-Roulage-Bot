@@ -3,10 +3,10 @@ const Fuse = require('fuse.js');
 const { Hono } = require('hono');
 const { serve } = require('@hono/node-server');
 
-console.log("=== 🚗 PAPA ROULAGE V3.5 (EXPANSION KINSHASA) 🚗 ===");
+console.log("=== 🚗 PAPA ROULAGE V3.6 (CORRECTIONS FINES) 🚗 ===");
 
 // ==========================================
-// 1. DICTIONNAIRE ÉLARGI ET SÉCURISÉ (12 AXES)
+// 1. DICTIONNAIRE ÉLARGI (12 AXES)
 // ==========================================
 const rues = [
   { nom: "Boulevard du 30 Juin", alias: ["30 juin", "bd du 30", "trente juin", "bld 30", "grand boulevard", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin", "gombé", "gombe"] },
@@ -16,7 +16,6 @@ const rues = [
   { nom: "Avenue de la Libération", alias: ["liberation", "ex 24 novembre", "24 novembre", "24 nov", "bandal", "moulaert", "selembao"] },
   { nom: "Route de Matadi", alias: ["route matadi", "matadi", "binza", "delvaux", "upn", "barriere", "pompage", "lalou"] },
   { nom: "Boulevard Lumumba", alias: ["lumumba", "bd lumumba", "route de l'aeroport", "ndjili", "pascal", "kingasani", "limete", "echangeur", "échangeur", "quartier 1", "q1", "masina"] },
-  // NOUVEAUX AXES CORRIGÉS (sans doublons)
   { nom: "Avenue Bypass", alias: ["bypass", "by-pass", "by pass", "cite verte", "cité verte", "rimeo"] },
   { nom: "Avenue de l'Université", alias: ["universite", "université", "livulu", "intendance", "unikin", "yolo", "kapela"] },
   { nom: "Boulevard Congo Japon (Poids Lourds)", alias: ["poids lourds", "poids lourd", "congo japon", "congo-japon", "gare centrale", "baramoto", "kingabwa"] },
@@ -32,7 +31,6 @@ const priorites = [
   { mots: ["liberation", "24 novembre", "24 nov", "bandal", "moulaert"], rue: "Avenue de la Libération" },
   { mots: ["matadi", "binza", "delvaux", "upn", "pompage"], rue: "Route de Matadi" },
   { mots: ["lumumba", "ndjili", "pascal", "kingasani", "limete", "echangeur", "échangeur"], rue: "Boulevard Lumumba" },
-  // Nouvelles priorités nettoyées
   { mots: ["bypass", "by-pass", "by pass", "cite verte", "cité verte", "rimeo"], rue: "Avenue Bypass" },
   { mots: ["unikin", "livulu", "intendance", "universite", "université", "yolo", "kapela"], rue: "Avenue de l'Université" },
   { mots: ["poids lourds", "poids lourd", "congo japon", "congo-japon", "baramoto"], rue: "Boulevard Congo Japon (Poids Lourds)" },
@@ -40,14 +38,12 @@ const priorites = [
   { mots: ["kimwenza", "kapela"], rue: "Avenue Kimwenza" }
 ];
 
-// Configuration Fuse.js boostée
 const fuse = new Fuse(rues, {
   keys: [{ name: 'alias', weight: 2 }, { name: 'nom', weight: 1 }],
   threshold: 0.45,
   ignoreLocation: true
 });
 
-// Mémoire des signalements
 const signalements = {};
 
 // ==========================================
@@ -55,9 +51,8 @@ const signalements = {};
 // ==========================================
 const bot = new Telegraf(process.env.BOT_TOKEN || '8058425054:AAE8AzAJv6wZgGPZ6zMyIqJjLrX-dmdh4a8');
 
-// Commande /start
 bot.start((ctx) => {
-  ctx.reply(`🇨🇩 PAPA ROULAGE V3.5 - PRÊT À RÉGULER LE TRAFIC ! 🇨🇩
+  ctx.reply(`🇨🇩 PAPA ROULAGE V3.6 - PRÊT À RÉGULER LE TRAFIC ! 🇨🇩
 
 📢 SIGNALER UN PROBLÈME :
 "Bouchon à Socimat"
@@ -73,7 +68,6 @@ bot.start((ctx) => {
 Restons solidaires sur la route ! 🚗`);
 });
 
-// Commande /aide (Mise à jour avec tes ajouts !)
 bot.command('aide', (ctx) => {
   ctx.reply(`🇨🇩 AIDE PAPA ROULAGE 🇨🇩
 
@@ -85,7 +79,7 @@ bot.command('aide', (ctx) => {
 🔍 CONSULTER :
 /etat UPN  ou  "etat upn"
 
-📍 LIEUX RECONNUS :
+📍 LIEUX RECONNUS (12 axes) :
 • 30 Juin (Socimat, Gare, Royal)
 • Kasa-Vubu (Victoire)
 • Ngaba (Triangle)
@@ -102,13 +96,11 @@ bot.command('aide', (ctx) => {
 💡 Exemple : "Bouchon upn"`);
 });
 
-// Commande /liste (Dynamique)
 bot.command('liste', (ctx) => {
   const listeRues = rues.map(r => `• ${r.nom}`).join('\n');
-  ctx.reply(`📋 RUES CONNUES :\n\n${listeRues}\n\nAbréviations : "bd du 30", "kasa", "ngaba", "upn", "bypass", "poids lourds"...`);
+  ctx.reply(`📋 RUES CONNUES :\n\n${listeRues}\n\nAbréviations : "bd du 30", "kasa", "ngaba", "upn", "bypass"...`);
 });
 
-// Commande /etat officielle
 bot.command('etat', (ctx) => {
   const texte = ctx.message.text.toLowerCase().replace('/etat', '').trim();
   
@@ -154,9 +146,10 @@ bot.command('etat', (ctx) => {
 
 // ==========================================
 // TRAITEMENT UNIQUE : signalements + "etat" sans slash
+// VERSION CORRIGÉE V3.6
 // ==========================================
 bot.on('text', async (ctx) => {
-  let texte = ctx.message.text.toLowerCase();
+  let texte = ctx.message.text.toLowerCase().trim();
   
   // 👉 CAS 1 : "etat upn" ou "état upn" (sans slash)
   if (texte.startsWith("état ") || texte.startsWith("etat ")) {
@@ -179,9 +172,15 @@ bot.on('text', async (ctx) => {
     if (rueTrouvee && signalements[rueTrouvee]) {
       const s = signalements[rueTrouvee];
       const minutes = Math.round((Date.now() - s.timestamp) / 60000);
+      
+      // Harmonisation du calcul du temps
       let temps = `⏱️ Signalé il y a ${minutes} min.`;
       if (minutes === 0) temps = "⏱️ Signalé à l'instant ! 🔥";
       if (minutes === 1) temps = "⏱️ Signalé il y a 1 minute.";
+      if (minutes >= 60) {
+        const heures = Math.floor(minutes / 60);
+        temps = `⚠️ Info datant d'il y a ${heures}h (peut être obsolète)`;
+      }
       
       ctx.reply(`📍 ${rueTrouvee}\n🚦 ${s.etat}\n${temps}\n\n🇨🇩 PAPA ROULAGE`);
     } else if (rueTrouvee) {
@@ -196,7 +195,7 @@ bot.on('text', async (ctx) => {
   if (texte.startsWith('/')) return;
   
   // 👉 CAS 3 : Signalement normal
-  console.log(`[DEBUG] Signalement reçu : "${texte}"`);
+  console.log(`[DEBUG] Message reçu : "${texte}"`);
   
   let rueTrouvee = null;
   for (const priorite of priorites) {
@@ -218,18 +217,8 @@ bot.on('text', async (ctx) => {
     }
   }
   
-  // Demander le lieu si absent
-  if (!rueTrouvee) {
-    if (texte.includes("bouchon") || texte.includes("accident") || texte.includes("fluide") || texte.includes("ralenti")) {
-      ctx.reply(`❓ " ${texte} " mais À QUEL ENDROIT ?\n\nExemples :\n"Bouchon à Socimat"\n"Accident à l'Échangeur"\n"Fluide sur UPN"`);
-      return;
-    }
-    ctx.reply(`❓ Lieu non reconnu. Tape /liste pour voir les axes.`);
-    return;
-  }
-  
-  // Déterminer l'état
-  let etat = "📢 INFORMATION";
+  // Détection stricte de l'état
+  let etat = null;
   if (texte.includes("bouchon") || texte.includes("embouteillage") || texte.includes("bloqué") || texte.includes("coincé") || texte.includes("gros")) {
     etat = "🔴 BOUCHON / BLOCAGE TOTAL";
   } else if (texte.includes("accident") || texte.includes("cogné") || texte.includes("choc")) {
@@ -240,7 +229,33 @@ bot.on('text', async (ctx) => {
     etat = "🟡 RALENTISSEMENT LÉGER";
   }
   
-  // Sauvegarder
+  // FIX 2 : Si l'utilisateur n'a donné QUE le nom de la rue (pas d'état)
+  if (rueTrouvee && !etat) {
+    if (signalements[rueTrouvee]) {
+      const s = signalements[rueTrouvee];
+      const minutes = Math.round((Date.now() - s.timestamp) / 60000);
+      let temps = `⏱️ Il y a ${minutes} min.`;
+      if (minutes >= 60) temps = `⚠️ Il y a ${Math.floor(minutes / 60)}h`;
+      ctx.reply(`💡 État actuel pour 📍 ${rueTrouvee} :\n🚦 ${s.etat} (${temps})\n\nPour signaler un changement, écris par exemple : "Bouchon sur ${rueTrouvee}"`);
+    } else {
+      ctx.reply(`🤷‍♂️ Aucun signalement pour ${rueTrouvee}.\n\nQue se passe-t-il là-bas ? Écris par exemple : "Bouchon sur ${rueTrouvee}"`);
+    }
+    return;
+  }
+  
+  // Si un état est mentionné mais que le lieu reste introuvable
+  if (!rueTrouvee && etat) {
+    ctx.reply(`❓ "${ctx.message.text}"... mais À QUEL ENDROIT ?\n\nExemples :\n"Bouchon à Socimat"\n"Accident à l'Échangeur"\n"Fluide sur UPN"`);
+    return;
+  }
+  
+  // Si le message ne contient ni rue ni état compris
+  if (!rueTrouvee && !etat) {
+    ctx.reply(`❓ Je n'ai pas bien compris.\n\n• Pour signaler : "Bouchon sur Bypass"\n• Pour consulter : "etat bypass"\n• Liste des rues : /liste`);
+    return;
+  }
+  
+  // Sauvegarde valide du signalement
   signalements[rueTrouvee] = {
     etat: etat,
     timestamp: Date.now()
@@ -250,15 +265,27 @@ bot.on('text', async (ctx) => {
   console.log(`[LOG] ${rueTrouvee} → ${etat}`);
 });
 
-// Lancement
-bot.launch();
-console.log("🤖 PAPA ROULAGE V3.5 ACTIF !");
+// ==========================================
+// LANCEMENT AVEC NETTOYAGE DES CONFLITS
+// ==========================================
+(async () => {
+  try {
+    await bot.telegram.deleteWebhook();
+    await bot.telegram.setWebhook();
+    console.log("🧹 Webhooks nettoyés !");
+  } catch (err) {
+    console.log("⚠️ Nettoyage webhook :", err.message);
+  }
+  
+  bot.launch();
+  console.log("🤖 PAPA ROULAGE V3.6 ACTIF !");
+})();
 
 // ==========================================
 // 3. SERVEUR WEB POUR RENDER
 // ==========================================
 const app = new Hono();
-app.get('/', (c) => c.text('Papa Roulage V3.5 en ligne ! 🇨🇩'));
+app.get('/', (c) => c.text('Papa Roulage V3.6 en ligne ! 🇨🇩'));
 
 const port = process.env.PORT || 3000;
 serve({ fetch: app.fetch, port: Number(port) });
