@@ -40,7 +40,7 @@ const signalements = {};
 // ==========================================
 // 2. LE BOT TELEGRAM
 // ==========================================
-const bot = new Telegraf('8058425054:AAE8AzAJv6wZgGPZ6zMyIqJjLrX-dmdh4a8');
+const bot = new Telegraf(process.env.BOT_TOKEN || '8058425054:AAE8AzAJv6wZgGPZ6zMyIqJjLrX-dmdh4a8');
 
 // Commande /start
 bot.start((ctx) => {
