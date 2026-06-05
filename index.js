@@ -75,7 +75,7 @@ const rues = [
   { nom: "Avenue Sendwe", lat: -4.3180, lon: 15.3020, alias: ["sendwe", "av sendwe", "sendwe port"] },
   { nom: "Carrefour Zando", lat: -4.3260, lon: 15.3160, alias: ["zando", "carrefour zando", "zando kasa vubu"] },
   
-  // CARREFOURS MAJEURS (5)
+  // CARREFOURS MAJEURS (4)
   { nom: "Rond-point Victoire", lat: -4.3280, lon: 15.3160, alias: ["victoire", "rp victoire", "rond point victoire", "victoire kasa vubu"] },
   { nom: "Rond-point UPN", lat: -4.3650, lon: 15.2350, alias: ["upn", "rp upn", "rond point upn", "upn matadi"] },
   { nom: "Rond-point Camp Kokolo", lat: -4.3500, lon: 15.2750, alias: ["camp kokolo", "rp kokolo", "kokolo", "camp"] },
@@ -285,165 +285,7 @@ async function getStats() {
 }
 
 // ==========================================
-// 4. ROUTES API POUR LA CARTE
-// ==========================================
-
-// Route API pour récupérer tous les signalements récents (pour la carte)
-app.get('/api/trafic', async (c) => {
-  try {
-    // Récupère le dernier signalement pour chaque rue
-    const result = await pool.query(`
-      SELECT DISTINCT ON (rue) rue, etat, timestamp, lat, lon
-      FROM signalements
-      ORDER BY rue, timestamp DESC
-    `);
-    
-    // Enrichit avec les coordonnées du dictionnaire si absentes
-    const traficAvecCoords = result.rows.map(signalement => {
-      const axe = rues.find(r => r.nom === signalement.rue);
-      return {
-        rue: signalement.rue,
-        etat: signalement.etat,
-        timestamp: signalement.timestamp,
-        lat: signalement.lat || axe?.lat,
-        lon: signalement.lon || axe?.lon
-      };
-    }).filter(s => s.lat && s.lon); // Filtre ceux qui ont des coordonnées
-    
-    return c.json({ success: true, data: traficAvecCoords, total: traficAvecCoords.length });
-  } catch (err) {
-    console.error("❌ Erreur API :", err.message);
-    return c.json({ success: false, error: err.message }, 500);
-  }
-});
-
-// Route pour la carte web
-app.get('/carte', (c) => {
-  const html = `<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Papa Roulage - Carte des bouchons Kinshasa</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <style>
-        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-        #map { height: 100vh; width: 100%; }
-        .legend {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: white;
-            padding: 10px 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            z-index: 1000;
-            font-size: 12px;
-        }
-        .legend h4 { margin: 0 0 5px 0; }
-        .legend div { margin: 3px 0; }
-        .red { color: #e74c3c; font-weight: bold; }
-        .green { color: #2ecc71; font-weight: bold; }
-        .orange { color: #f39c12; font-weight: bold; }
-        .gray { color: #95a5a6; }
-        .title {
-            position: absolute;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #2c3e50;
-            color: white;
-            padding: 8px 16px;
-            border-radius: 8px;
-            z-index: 1000;
-            font-weight: bold;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-    </style>
-</head>
-<body>
-    <div class="title">🚗 PAPA ROULAGE - Carte des bouchons Kinshasa 🚗</div>
-    <div id="map"></div>
-    <div class="legend">
-        <h4>Légende</h4>
-        <div><span class="red">🔴</span> Bouchon / Blocage</div>
-        <div><span class="orange">🟡</span> Ralentissement</div>
-        <div><span class="green">🟢</span> Fluide</div>
-        <div><span class="gray">⚪</span> Information</div>
-        <hr>
-        <div>📊 Dernières infos en temps réel</div>
-    </div>
-    
-    <script>
-        const map = L.map('map').setView([-4.35, 15.31], 12);
-        
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; CartoDB',
-            subdomains: 'abcd',
-            maxZoom: 19
-        }).addTo(map);
-        
-        function getMarkerColor(etat) {
-            if (etat.includes('BOUCHON') || etat.includes('BLOCAGE')) return '#e74c3c';
-            if (etat.includes('RALENTISSEMENT')) return '#f39c12';
-            if (etat.includes('FLUIDE')) return '#2ecc71';
-            return '#95a5a6';
-        }
-        
-        function getMarkerIcon(color) {
-            return L.divIcon({
-                className: 'custom-marker',
-                html: \`<div style="background-color: \${color}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px black;"></div>\`,
-                iconSize: [14, 14],
-                popupAnchor: [0, -7]
-            });
-        }
-        
-        async function chargerSignalements() {
-            try {
-                const reponse = await fetch('/api/trafic');
-                const resultat = await reponse.json();
-                
-                if (resultat.success && resultat.data.length > 0) {
-                    resultat.data.forEach(signalement => {
-                        if (signalement.lat && signalement.lon) {
-                            const color = getMarkerColor(signalement.etat);
-                            const icon = getMarkerIcon(color);
-                            
-                            const date = new Date(signalement.timestamp);
-                            const heure = date.toLocaleTimeString('fr-FR');
-                            const age = Math.round((Date.now() - new Date(signalement.timestamp)) / 60000);
-                            let ageTexte = age < 60 ? \`\${age} min\` : \`\${Math.floor(age/60)}h\${age%60}min\`;
-                            
-                            L.marker([signalement.lat, signalement.lon], { icon: icon })
-                                .addTo(map)
-                                .bindPopup(\`
-                                    <b>\${signalement.rue}</b><br>
-                                    🚦 \${signalement.etat}<br>
-                                    🕐 Dernier signalement: \${heure} (\${ageTexte})<br>
-                                    <i>Signalé par la communauté Papa Roulage</i>
-                                \`);
-                        }
-                    });
-                }
-            } catch (error) {
-                console.error('Erreur chargement:', error);
-            }
-        }
-        
-        chargerSignalements();
-        
-        // Rafraîchir toutes les 30 secondes
-        setInterval(chargerSignalements, 30000);
-    </script>
-</body>
-</html>`;
-  return c.html(html);
-});
-
-// ==========================================
-// 5. LE BOT TELEGRAM
+// 4. LE BOT TELEGRAM
 // ==========================================
 const bot = new Telegraf(process.env.BOT_TOKEN || '8058425054:AAE8AzAJv6wZgGPZ6zMyIqJjLrX-dmdh4a8');
 
@@ -585,7 +427,7 @@ bot.command('etat', async (ctx) => {
 });
 
 // ==========================================
-// 6. TRAITEMENT DES MESSAGES
+// 5. TRAITEMENT DES MESSAGES
 // ==========================================
 bot.on('text', async (ctx) => {
   let texte = ctx.message.text.toLowerCase().trim();
@@ -701,10 +543,14 @@ bot.on('text', async (ctx) => {
 });
 
 // ==========================================
-// 7. SERVEUR WEBHOOK HONO
+// 6. SERVEUR WEB HONO (Routes API + Webhook)
 // ==========================================
 const app = new Hono();
+
+// Route principale
 app.get('/', (c) => c.text('Papa Roulage V4.0 en ligne ! 65 axes 🇨🇩'));
+
+// Route API pour récupérer tous les signalements récents (pour la carte)
 app.get('/api/trafic', async (c) => {
   try {
     const result = await pool.query(`
@@ -730,6 +576,8 @@ app.get('/api/trafic', async (c) => {
     return c.json({ success: false, error: err.message }, 500);
   }
 });
+
+// Route pour la carte web
 app.get('/carte', (c) => {
   const html = `<!DOCTYPE html>
 <html lang="fr">
@@ -806,7 +654,7 @@ app.get('/carte', (c) => {
         function getMarkerIcon(color) {
             return L.divIcon({
                 className: 'custom-marker',
-                html: \`<div style="background-color: \${color}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px black;"></div>\`,
+                html: '<div style="background-color: ' + color + '; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px black;"></div>',
                 iconSize: [14, 14],
                 popupAnchor: [0, -7]
             });
@@ -826,16 +674,11 @@ app.get('/carte', (c) => {
                             const date = new Date(signalement.timestamp);
                             const heure = date.toLocaleTimeString('fr-FR');
                             const age = Math.round((Date.now() - new Date(signalement.timestamp)) / 60000);
-                            let ageTexte = age < 60 ? \`\${age} min\` : \`\${Math.floor(age/60)}h\${age%60}min\`;
+                            let ageTexte = age < 60 ? age + ' min' : Math.floor(age/60) + 'h' + (age%60) + 'min';
                             
                             L.marker([signalement.lat, signalement.lon], { icon: icon })
                                 .addTo(map)
-                                .bindPopup(\`
-                                    <b>\${signalement.rue}</b><br>
-                                    🚦 \${signalement.etat}<br>
-                                    🕐 Dernier signalement: \${heure} (\${ageTexte})<br>
-                                    <i>Signalé par la communauté Papa Roulage</i>
-                                \`);
+                                .bindPopup('<b>' + signalement.rue + '</b><br>🚦 ' + signalement.etat + '<br>🕐 Dernier signalement: ' + heure + ' (' + ageTexte + ')<br><i>Signalé par la communauté Papa Roulage</i>');
                         }
                     });
                 }
@@ -851,6 +694,8 @@ app.get('/carte', (c) => {
 </html>`;
   return c.html(html);
 });
+
+// Route webhook pour Telegram
 app.post('/webhook', async (c) => {
   try {
     const update = await c.req.json();
@@ -862,7 +707,13 @@ app.post('/webhook', async (c) => {
   }
 });
 
+// ==========================================
+// 7. LANCEMENT DU SERVEUR ET DU BOT
+// ==========================================
 const PORT = process.env.PORT || 3000;
+
+serve({ fetch: app.fetch, port: PORT });
+console.log(`🌍 Serveur Web sur le port ${PORT}`);
 
 (async () => {
   try {
@@ -878,6 +729,3 @@ const PORT = process.env.PORT || 3000;
     bot.launch();
   }
 })();
-
-serve({ fetch: app.fetch, port: PORT });
-console.log(`🌍 Serveur Web sur le port ${PORT}`);
