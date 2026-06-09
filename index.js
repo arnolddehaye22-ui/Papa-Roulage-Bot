@@ -4,32 +4,30 @@ const Fuse = require('fuse.js');
 const { Hono } = require('hono');
 const { serve } = require('@hono/node-server');
 
-console.log("=== 🚗 PAPA ROULAGE V4.1.1 (OPTIMISATIONS FINALES) ===");
+console.log("=== 🚗 PAPA ROULAGE V4.2.5 (POLYLINES - 20 AXES) ===");
 
-// Forçage du fuseau horaire au niveau du processus Node.js
+// Forçage du fuseau horaire
 process.env.TZ = 'Africa/Kinshasa';
 
 // ==========================================
-// 0. CACHE POUR LES STATISTIQUES
+// 0. CACHE STATS
 // ==========================================
 let statsCache = null;
 let lastStatsUpdate = 0;
-const STATS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+const STATS_CACHE_TTL = 15 * 60 * 1000;
 
 // ==========================================
-// 1. CONNEXION À LA BASE POSTGRESQL
+// 1. CONNEXION POSTGRESQL
 // ==========================================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false }
 });
 
-// Gestion des erreurs de connexion PostgreSQL pour éviter le crash
 pool.on('error', (err) => {
-  console.error('⚠️ Erreur inattendue sur un client PostgreSQL inactif :', err.message);
+  console.error('⚠️ Erreur PostgreSQL :', err.message);
 });
 
-// Création de la table et des index
 (async () => {
   try {
     await pool.query(`
@@ -47,9 +45,9 @@ pool.on('error', (err) => {
       CREATE INDEX IF NOT EXISTS idx_signalements_stats ON signalements (jour, heure);
       CREATE INDEX IF NOT EXISTS idx_signalements_timestamp ON signalements (timestamp);
     `);
-    console.log("📊 Base de données PostgreSQL initialisée avec index de performance.");
+    console.log("📊 Base PostgreSQL initialisée.");
   } catch (err) {
-    console.error("⚠️ Erreur initialisation BDD :", err.message);
+    console.error("⚠️ Erreur BDD :", err.message);
   }
 })();
 
@@ -57,7 +55,7 @@ pool.on('error', (err) => {
 // 2. DICTIONNAIRE DES RUES (65 AXES)
 // ==========================================
 const rues = [
-  { nom: "Boulevard du 30 Juin", lat: -4.3225, lon: 15.3112, alias: ["30 juin", "bd du 30", "trente juin", "bld 30", "grand boulevard", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin", "gombé", "gombe"] },
+  { nom: "Boulevard du 30 Juin", lat: -4.3225, lon: 15.3112, alias: ["30 juin", "bd du 30", "trente juin", "bld 30", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin", "gombé", "gombe"] },
   { nom: "Avenue Kasa-Vubu", lat: -4.3281, lon: 15.3156, alias: ["kasa vubu", "kasa", "av kasa", "kasavubu", "rond-point victoire", "victoire", "central", "bandal", "mariage"] },
   { nom: "Boulevard Triomphal", lat: -4.3356, lon: 15.3050, alias: ["triomphal", "bd triomphal", "triomphale", "palais du peuple", "stade des martyrs", "martyrs"] },
   { nom: "Rond-point Ngaba", lat: -4.3844, lon: 15.3475, alias: ["ngaba", "rp ngaba", "rond point ngaba", "triangle", "universite", "université"] },
@@ -123,18 +121,120 @@ const rues = [
   { nom: "Kinshasa Golf", lat: -4.3550, lon: 15.2800, alias: ["golf", "golf kinshasa"] }
 ];
 
-// Configuration Fuse.js OPTIMISÉE (threshold 0.3, poids alias 3)
+// Configuration Fuse.js
 const fuse = new Fuse(rues, {
-  keys: [
-    { name: 'alias', weight: 3 },
-    { name: 'nom', weight: 1 }
-  ],
+  keys: [{ name: 'alias', weight: 3 }, { name: 'nom', weight: 1 }],
   threshold: 0.3,
   ignoreLocation: true
 });
 
 // ==========================================
-// 3. FONCTIONS BASE DE DONNÉES
+// 3. MODULE DE COMPRÉHENSION DES INTENTIONS
+// ==========================================
+const intentions = {
+  bouchon: {
+    mots: ["bouchon", "embouteillage", "bloqué", "coincé", "bouché", "mort", "bordel"],
+    phrases: [
+      /c['']?est\s+(mort|bouché|bloqué|coincé|fini|fermé)/i,
+      /(ya|il y a)\s+trop\s+de\s+(voitures|bagnoles|véhicules|gens)/i,
+      /(on|ça)\s+(n['']?avance|avance\s+pas|ne\s+circule\s+pas|est\s+bloqué)/i,
+      /(c['']?est|très|trop)\s+(chargé|saturé|dense|énorme)/i,
+      /ca\s+(ne\s+)?bouge\s+pas/i,
+      /c['']?est\s+le\s+bordel/i,
+      /(bloqué|coincé|bouché)\s+total/i,
+      /(ça|on)\s+(bouchonne|se\s+traîne)/i
+    ],
+    etat: "🔴 BOUCHON / BLOCAGE TOTAL"
+  },
+  accident: {
+    mots: ["accident", "cogné", "choc", "tamponné", "carton", "percuté", "heurté"],
+    phrases: [
+      /(ya|il y a)\s+(eu\s+)?un\s+accident/i,
+      /deux\s+(voitures|bagnoles|véhicules)\s+(se\s+sont\s+)?cognées/i,
+      /(voitures|bagnoles|motards)\s+accidentées/i,
+      /(choc|collision)\s+(frontal|arrière|latéral)/i,
+      /(moto|voiture)\s+(renversé|renversée)/i
+    ],
+    etat: "⚠️ ACCIDENT SUR LA VOIE ⚠️"
+  },
+  fluide: {
+    mots: ["fluide", "calme", "normal", "vide", "clair", "dégagé", "libre", "bonne"],
+    phrases: [
+      /(ça|la\s+circulation|la\s+route|le\s+trafic)\s+(roule|circule|coule)\s+(bien|normalement|correctement|tranquillement)/i,
+      /c['']?est\s+(fluide|clair|dégagé|libre|bonne)/i,
+      /(ya|il y a)\s+(rien|pas\s+de\s+problème|pas\s+de\s+bouchon)/i,
+      /ca\s+roule\s+(bien|sans\s+problème|super|nickel)/i,
+      /pas\s+(trop\s+)?(de\s+)?(monde|voitures|difficultés)/i,
+      /(on|ça)\s+(circule|avance)\s+(bien|normal)/i
+    ],
+    etat: "🟢 FLUIDE / ÇA ROULE BIEN"
+  },
+  ralentissement: {
+    mots: ["ralenti", "lent", "petit bouchon", "circule doucement", "coince"],
+    phrases: [
+      /(ça|on|le\s+trafic)\s+(coince|ralentit|avance\s+lentement|se\s+traîne)\b/i,
+      /(petit|un\s+peu\s+de|mini)\s+(bouchon|ralenti|embouteillage)/i,
+      /c['']?est\s+(ralenti|lent|chargé\s+sans\s+plus)/i,
+      /(on|c['']?est)\s+(dans|dans\s+un)\s+(petit\s+)?(ralenti|bouchon)/i,
+      /ça\s+(commence\s+à|un\s+peu)\s+(coincer|charger)/i,
+      /(légèrement|un\s+peu)\s+(bloqué|bouché|ralenti)/i
+    ],
+    etat: "🟡 RALENTISSEMENT LÉGER"
+  }
+};
+
+function comprendreIntention(texte) {
+  const texteLower = texte.toLowerCase();
+  for (const [intention, data] of Object.entries(intentions)) {
+    for (const mot of data.mots) {
+      if (texteLower.includes(mot)) {
+        console.log(`[INTENTION] ${intention} détectée par mot-clé : "${mot}"`);
+        return data.etat;
+      }
+    }
+    for (const regex of data.phrases) {
+      if (regex.test(texteLower)) {
+        console.log(`[INTENTION] ${intention} détectée par regex`);
+        return data.etat;
+      }
+    }
+  }
+  console.log(`[INTENTION] Aucune intention détectée`);
+  return null;
+}
+
+function extraireLieu(texte) {
+  const motsIntention = Object.values(intentions).flatMap(i => i.mots);
+  let texteNettoye = texte;
+  for (const mot of motsIntention) {
+    texteNettoye = texteNettoye.replace(new RegExp(`\\b${mot}\\b`, 'gi'), '');
+  }
+  const motsParasites = ["sur", "à", "au", "aux", "dans", "vers", "pour", "avec", "de", "du", "des", "et", "le", "la", "les", "un", "une", "vers", "côté", "niveau", "proche", "près", "autour", "frère", "cher", "s'il", "vous", "plaît", "stp", "sil", "vousplait"];
+  for (const mot of motsParasites) {
+    texteNettoye = texteNettoye.replace(new RegExp(`\\b${mot}\\b`, 'gi'), '');
+  }
+  texteNettoye = texteNettoye.trim().replace(/\s+/g, ' ');
+  console.log(`[EXTRACTION] Texte nettoyé : "${texteNettoye}"`);
+  
+  for (const axe of rues) {
+    for (const alias of axe.alias) {
+      if (texteNettoye.includes(alias)) {
+        console.log(`[EXTRACTION] Lieu trouvé : ${axe.nom} via alias "${alias}"`);
+        return axe;
+      }
+    }
+  }
+  const recherche = fuse.search(texteNettoye);
+  if (recherche.length > 0) {
+    console.log(`[EXTRACTION] Lieu trouvé via Fuse.js : ${recherche[0].item.nom}`);
+    return recherche[0].item;
+  }
+  console.log(`[EXTRACTION] Aucun lieu trouvé`);
+  return null;
+}
+
+// ==========================================
+// 4. FONCTIONS BASE DE DONNÉES
 // ==========================================
 async function sauvegarderSignalement(rue, etat, lat, lon) {
   const maintenant = new Date();
@@ -145,11 +245,10 @@ async function sauvegarderSignalement(rue, etat, lat, lon) {
       'INSERT INTO signalements (rue, etat, jour, heure, lat, lon) VALUES ($1, $2, $3, $4, $5, $6)',
       [rue, etat, jour, heure, lat, lon]
     );
-    // Invalider le cache des stats après un nouveau signalement
     statsCache = null;
     console.log(`💾 Signalement enregistré : ${rue} → ${etat} (${jour} - ${heure}h)`);
   } catch (err) {
-    console.error("❌ Erreur sauvegarde BDD :", err.message);
+    console.error("❌ Erreur sauvegarde :", err.message);
   }
 }
 
@@ -161,7 +260,7 @@ async function getDernierSignalement(rue) {
     );
     return result.rows.length > 0 ? result.rows[0] : null;
   } catch (err) {
-    console.error("❌ Erreur lecture BDD :", err.message);
+    console.error("❌ Erreur lecture :", err.message);
     return null;
   }
 }
@@ -173,22 +272,17 @@ async function getStats() {
       pool.query(`SELECT heure, COUNT(*) as total FROM signalements GROUP BY heure ORDER BY total DESC LIMIT 1`),
       pool.query(`SELECT jour, COUNT(*) as total FROM signalements GROUP BY jour ORDER BY total DESC LIMIT 1`)
     ]);
-    return { 
-      topRues: topRues.rows, 
-      heurePointe: heurePointe.rows[0], 
-      jourPointe: jourPointe.rows[0] 
-    };
+    return { topRues: topRues.rows, heurePointe: heurePointe.rows[0], jourPointe: jourPointe.rows[0] };
   } catch (err) {
-    console.error("❌ Erreur compilation stats :", err.message);
+    console.error("❌ Erreur stats :", err.message);
     return null;
   }
 }
 
-// Fonction avec cache pour les stats
 async function getStatsWithCache() {
   const now = Date.now();
   if (statsCache && (now - lastStatsUpdate) < STATS_CACHE_TTL) {
-    console.log("📊 Stats servies depuis le cache");
+    console.log("📊 Stats depuis cache");
     return statsCache;
   }
   statsCache = await getStats();
@@ -197,57 +291,31 @@ async function getStatsWithCache() {
 }
 
 // ==========================================
-// 4. FONCTION CENTRALISÉE DE RECHERCHE
-// ==========================================
-function chercherRue(texte) {
-  // Nettoyer le texte des mots parasites courants
-  const texteNettoye = texte.replace(/\b(sur|à|au|dans|vers|pour|avec|de|du|des|et|le|la|les|un|une)\b/gi, '').trim();
-  
-  // Recherche par correspondance exacte sur un mot complet
-  for (const axe of rues) {
-    for (const alias of axe.alias) {
-      const regex = new RegExp(`\\b${alias}\\b`, 'i');
-      if (regex.test(texteNettoye)) {
-        return axe;
-      }
-    }
-  }
-  // Fallback sur la recherche floue
-  const recherche = fuse.search(texteNettoye);
-  if (recherche.length > 0) {
-    return recherche[0].item;
-  }
-  return null;
-}
-
-// ==========================================
-// 5. LE BOT TELEGRAM (SÉCURISÉ)
+// 5. LE BOT TELEGRAM
 // ==========================================
 if (!process.env.BOT_TOKEN) {
-  console.error("❌ ERREUR FATALE : Le BOT_TOKEN n'est pas défini dans l'environnement !");
+  console.error("❌ ERREUR FATALE : BOT_TOKEN non défini !");
   process.exit(1);
 }
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 bot.start((ctx) => {
-  ctx.reply(`🇨🇩 PAPA ROULAGE V4.1.1 - OPTIMISATIONS FINALES ! 🚗
+  ctx.reply(`🇨🇩 PAPA ROULAGE V4.2.5 - LIGNES COLORÉES ! 🚗
 
-📢 POUR SIGNALER :
-"Bouchon sur le 30 Juin"
-"Accident à UPN"
-"Fluide sur Bypass"
+📢 POUR SIGNALER (langage naturel) :
+"C'est mort à Socimat"
+"Ça roule bien sur le 30 Juin"
+"Ya trop de voitures vers Ngaba"
 
-🔍 POUR CONSULTER :
-"etat commerce" ou /etat Huileries
-
-🗺️ CARTE INTERACTIVE : /carte
-📊 STATISTIQUES : /stats
-📋 AXES COUVERTS : /liste`);
+🔍 CONSULTER : /etat Commerce
+🗺️ CARTE : /carte (lignes colorées!)
+📊 STATS : /stats
+📋 LISTE : /liste`);
 });
 
-bot.command('carte', (c) => c.reply(`🗺️ CARTOGRAPHIE PAPA ROULAGE
+bot.command('carte', (c) => c.reply(`🗺️ PAPA ROULAGE - CARTE INTERACTIVE
 
-Suivez l'état du trafic en temps réel à Kinshasa :
+Lignes colorées pour 20 axes prioritaires !
 👉 https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'papa-roulage-bot.onrender.com'}/carte`));
 
 bot.command('liste', (ctx) => {
@@ -258,31 +326,37 @@ bot.command('liste', (ctx) => {
 bot.command('stats', async (ctx) => {
   const stats = await getStatsWithCache();
   if (!stats || stats.topRues.length === 0) {
-    return ctx.reply(`📊 Aucune donnée collectée pour le moment.`);
+    return ctx.reply(`📊 Aucune donnée pour le moment.`);
   }
-  let msg = `📊 RAPPORT DU TRAFIC - KINSHASA 📊\n\n🔴 TOP 5 DES AXES LES PLUS SENGORGÉS :\n`;
-  stats.topRues.forEach((r, i) => { msg += `${i+1}. ${r.rue} (${r.total} signalements)\n`; });
-  if (stats.heurePointe) msg += `\n⏰ HEURE CRITIQUE : ${stats.heurePointe.heure}h`;
-  if (stats.jourPointe) msg += `\n📅 JOUR LE PLUS SOMBRE : ${stats.jourPointe.jour}`;
+  let msg = `📊 RAPPORT DU TRAFIC - KINSHASA 📊\n\n🔴 TOP 5 :\n`;
+  stats.topRues.forEach((r, i) => { msg += `${i+1}. ${r.rue} (${r.total})\n`; });
+  if (stats.heurePointe) msg += `\n⏰ HEURE DE POINTE : ${stats.heurePointe.heure}h`;
+  if (stats.jourPointe) msg += `\n📅 JOUR LE PLUS CHARGÉ : ${stats.jourPointe.jour}`;
   ctx.reply(msg);
 });
 
-// Handler unifié pour la commande /etat
 const gererDemandeEtat = async (ctx, lieu) => {
-  if (!lieu) return ctx.reply("❌ Précisez un lieu. Exemple: /etat triomphal");
-  
-  const axe = chercherRue(lieu);
-  if (!axe) return ctx.reply(`❓ Axe non reconnu. Tapez /liste pour voir les options disponibles.`);
-
+  if (!lieu) return ctx.reply("❌ Exemple: /etat triomphal");
+  let axe = null;
+  for (const a of rues) {
+    for (const alias of a.alias) {
+      if (lieu.includes(alias)) { axe = a; break; }
+    }
+    if (axe) break;
+  }
+  if (!axe) {
+    const recherche = fuse.search(lieu);
+    if (recherche.length > 0) axe = recherche[0].item;
+  }
+  if (!axe) return ctx.reply(`❓ Axe non reconnu. /liste pour voir les axes.`);
   const dernier = await getDernierSignalement(axe.nom);
   if (dernier) {
     const minutes = Math.round((Date.now() - new Date(dernier.timestamp).getTime()) / 60000);
     let temps = `⏱️ Mis à jour il y a ${minutes} min.`;
-    if (minutes >= 60) temps = `⚠️ Info datant d'il y a ${Math.floor(minutes / 60)}h (peut être obsolète)`;
-    
-    ctx.reply(`📍 ${axe.nom}\n🚦 ${dernier.etat}\n${temps}\n\n🗺️ Carte interactive : https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'papa-roulage-bot.onrender.com'}/carte`);
+    if (minutes >= 60) temps = `⚠️ Info datant d'il y a ${Math.floor(minutes / 60)}h`;
+    ctx.reply(`📍 ${axe.nom}\n🚦 ${dernier.etat}\n${temps}\n\n🗺️ Carte : /carte`);
   } else {
-    ctx.reply(`🟢 ${axe.nom} : Aucun signalement récent. Trafic à priori fluide !`);
+    ctx.reply(`🟢 ${axe.nom} : Aucun signalement. Trafic fluide.`);
   }
 };
 
@@ -291,61 +365,57 @@ bot.command('etat', (ctx) => {
   gererDemandeEtat(ctx, lieu);
 });
 
-// Traitement des messages texte
+// ==========================================
+// 6. TRAITEMENT DES MESSAGES
+// ==========================================
 bot.on('text', async (ctx) => {
   const texte = ctx.message.text.toLowerCase().trim();
   if (texte.startsWith('/')) return;
+  console.log(`[MESSAGE] ${texte}`);
 
-  // Interception des demandes d'état textuelles "etat [lieu]"
   if (texte.startsWith("état ") || texte.startsWith("etat ")) {
     const lieu = texte.replace(/^état\s+/i, '').replace(/^etat\s+/i, '').trim();
     return gererDemandeEtat(ctx, lieu);
   }
 
-  // Analyse syntaxique de l'état avec expressions régulières précises
-  let etat = null;
-  if (/\b(bouchon|embouteillage|bloqué|coincé|bouché|embouteillé)\b/.test(texte)) {
-    etat = "🔴 BOUCHON / BLOCAGE TOTAL";
-  } else if (/\b(accident|cogné|choc|tamponné)\b/.test(texte)) {
-    etat = "⚠️ ACCIDENT SUR LA VOIE ⚠️";
-  } else if (/\b(fluide|calme|normal|vide|ça roule|ca roule)\b/.test(texte)) {
-    etat = "🟢 FLUIDE / ÇA ROULE BIEN";
-  } else if (/\b(ralenti|lent|petit bouchon)\b/.test(texte)) {
-    etat = "🟡 RALENTISSEMENT LÉGER";
+  let etat = comprendreIntention(texte);
+  const axe = extraireLieu(texte);
+  
+  if (axe && !etat) return gererDemandeEtat(ctx, axe.nom);
+  if (!axe && etat) {
+    ctx.reply(`❓ Je vois un problème de trafic, mais À QUEL ENDROIT ?
+
+Ex: "C'est mort à Socimat"
+📋 Liste : /liste`);
+    return;
   }
-
-  const axe = chercherRue(texte);
-
   if (axe && etat) {
     await sauvegarderSignalement(axe.nom, etat, axe.lat, axe.lon);
-    ctx.reply(`✅ Reçu par Papa Roulage !
+    ctx.reply(`✅ Papa Roulage a compris !
 
 📍 ${axe.nom}
 🚦 ${etat}
+📝 "${ctx.message.text}"
 
-Merci pour la communauté kinoise ! 🇨🇩`);
-  } else if (axe && !etat) {
-    return gererDemandeEtat(ctx, axe.nom);
-  } else if (!axe && etat) {
-    ctx.reply(`❓ C'est noté pour le problème de trafic, mais c'est à quel endroit exactement ?
-
-Récrivez par exemple : "Bouchon sur Kasa-Vubu"`);
-  } else {
-    ctx.reply(`❓ Je n'ai pas bien compris votre message.
-
-• Pour signaler : "Bouchon à Socimat"
-• Pour consulter : "etat socimat"`);
+🗺️ Carte : /carte`);
+    return;
   }
+  ctx.reply(`❓ Je n'ai pas compris.
+
+Exemples :
+• "C'est mort à Socimat" → 🔴 Bouchon
+• "Ça roule bien sur le 30 Juin" → 🟢 Fluide
+• "Accident à l'Échangeur" → ⚠️ Accident
+• "/carte" pour voir la carte`);
 });
 
 // ==========================================
-// 6. SERVEUR WEB HONO
+// 7. SERVEUR WEB HONO (CARTE AVEC POLYLINES)
 // ==========================================
 const app = new Hono();
 
-app.get('/', (c) => c.text('Papa Roulage V4.1.1 API - Kinshasa running 🇨🇩'));
+app.get('/', (c) => c.text('Papa Roulage V4.2.5 API - Kinshasa running 🇨🇩'));
 
-// API /trafic avec filtrage des signalements de moins de 48h
 app.get('/api/trafic', async (c) => {
   try {
     const result = await pool.query(`
@@ -356,46 +426,104 @@ app.get('/api/trafic', async (c) => {
     `);
     return c.json({ success: true, data: result.rows, total: result.rows.length });
   } catch (err) {
-    console.error("❌ Erreur API /trafic :", err.message);
     return c.json({ success: false, error: err.message }, 500);
   }
 });
 
-// Route de la carte avec fuseau horaire frontend
 app.get('/carte', (c) => {
-  const host = process.env.RENDER_EXTERNAL_HOSTNAME || 'papa-roulage-bot.onrender.com';
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Papa Roulage Live - Kinshasa</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>Papa Roulage - Trafic Kinshasa</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     body { margin: 0; padding: 0; }
     #map { height: 100vh; width: 100%; }
-    .legend { position: absolute; bottom: 20px; right: 20px; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); z-index: 1000; font-family: sans-serif; font-size: 13px; }
-    .title { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: white; padding: 10px 20px; border-radius: 20px; z-index: 1000; font-family: sans-serif; font-weight: bold; }
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(255,255,255,0.95);
+      padding: 12px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      z-index: 1000;
+      font-family: sans-serif;
+      font-size: 12px;
+    }
+    .title {
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #2c3e50;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      z-index: 1000;
+      font-family: sans-serif;
+      font-weight: bold;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    @media (max-width: 600px) {
+      .title { font-size: 11px; top: 10px; white-space: normal; text-align: center; width: 90%; }
+      .legend { bottom: 10px; right: 10px; padding: 8px; font-size: 10px; }
+    }
   </style>
 </head>
 <body>
-  <div class="title">🚗 PAPA ROULAGE - TRAFIC KINSHASA 🚗</div>
+  <div class="title">🚗 PAPA ROULAGE - TRAFIC EN TEMPS RÉEL 🚗</div>
   <div id="map"></div>
   <div class="legend">
-    <strong>Légende :</strong><br>
-    🔴 Bouchon Majeur<br>
-    🟡 Ralentissement<br>
-    🟢 Fluide<br>
-    ⚪ Non spécifié
+    <strong>Légende</strong><br>
+    <span style="color:#e74c3c">🔴</span> Bouchon / Accident<br>
+    <span style="color:#f39c12">🟡</span> Ralentissement<br>
+    <span style="color:#2ecc71">🟢</span> Fluide<br>
+    <span style="color:#95a5a6">⚪</span> Non spécifié<br>
+    <hr>
+    📍 <strong>65 axes couverts</strong><br>
+    🟢 20 axes avec lignes colorées<br>
+    🔵 45 axes avec points
   </div>
   <script>
     const map = L.map('map').setView([-4.34, 15.31], 12.5);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
-    const markersGroup = L.layerGroup().addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 19
+    }).addTo(map);
+    
+    const trafficLayer = L.layerGroup().addTo(map);
+
+    // SEGMENTS POUR 20 AXES PRIORITAIRES
+    const tracesRues = {
+      "Boulevard du 30 Juin": [[-4.3140,15.3150],[-4.3180,15.3130],[-4.3225,15.3112],[-4.3260,15.3080],[-4.3300,15.3050]],
+      "Avenue Kasa-Vubu": [[-4.3180,15.3100],[-4.3220,15.3130],[-4.3281,15.3156],[-4.3350,15.3180],[-4.3500,15.3000]],
+      "Boulevard Lumumba": [[-4.3180,15.3250],[-4.3300,15.3380],[-4.3400,15.3500],[-4.3480,15.3650],[-4.3520,15.3780],[-4.3720,15.4150]],
+      "Rond-point Ngaba": [[-4.3800,15.3420],[-4.3844,15.3475],[-4.3900,15.3520]],
+      "Route de Matadi": [[-4.3400,15.2680],[-4.3480,15.2550],[-4.3550,15.2450],[-4.3650,15.2300]],
+      "Avenue Bypass": [[-4.3680,15.3350],[-4.3750,15.3550],[-4.3950,15.3650]],
+      "Avenue de la Libération": [[-4.3280,15.3050],[-4.3400,15.2900],[-4.3500,15.2800],[-4.3650,15.2700]],
+      "Boulevard Triomphal": [[-4.3300,15.3020],[-4.3356,15.3050],[-4.3420,15.3080],[-4.3500,15.3120]],
+      "Rond-point Victoire": [[-4.3260,15.3140],[-4.3280,15.3160],[-4.3320,15.3200]],
+      "Rond-point UPN": [[-4.3600,15.2320],[-4.3650,15.2350],[-4.3700,15.2380]],
+      "Carrefour Ngaliema": [[-4.3450,15.2720],[-4.3500,15.2750],[-4.3550,15.2780]],
+      "Marché Central": [[-4.3160,15.3080],[-4.3180,15.3100],[-4.3220,15.3120]],
+      "Avenue du Commerce": [[-4.3180,15.3080],[-4.3200,15.3100],[-4.3220,15.3120]],
+      "Carrefour Lemba": [[-4.3650,15.3300],[-4.3700,15.3350],[-4.3750,15.3400]],
+      "Rond-point Kintambo": [[-4.3100,15.2920],[-4.3150,15.2950],[-4.3200,15.2980]],
+      "Stade des Martyrs": [[-4.3320,15.3020],[-4.3356,15.3050],[-4.3400,15.3080]],
+      "Tour de l'Échangeur": [[-4.3350,15.3450],[-4.3400,15.3500],[-4.3450,15.3550]],
+      "Beach Ngobila": [[-4.3120,15.3020],[-4.3150,15.3050],[-4.3180,15.3080]],
+      "Croisement Diplomate": [[-4.3200,15.3110],[-4.3220,15.3130],[-4.3240,15.3150]],
+      "Rond-point Forescom": [[-4.3280,15.3140],[-4.3320,15.3160],[-4.3360,15.3180]]
+    };
 
     function getColor(etat) {
-      if (typeof etat !== 'string') return '#95a5a6';
+      if (!etat) return '#95a5a6';
       if (etat.includes('BOUCHON') || etat.includes('ACCIDENT')) return '#e74c3c';
       if (etat.includes('RALENTISSEMENT')) return '#f39c12';
       if (etat.includes('FLUIDE')) return '#2ecc71';
@@ -407,23 +535,25 @@ app.get('/carte', (c) => {
         const res = await fetch('/api/trafic');
         const json = await res.json();
         if (json.success) {
-          markersGroup.clearLayers();
+          trafficLayer.clearLayers();
           json.data.forEach(s => {
-            if (s.lat && s.lon) {
-              const markerIcon = L.divIcon({
-                html: '<div style="background-color: ' + getColor(s.etat) + '; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
-                className: 'custom-pin',
-                iconSize: [16, 16]
-              });
-              // Fuseau horaire Kinshasa dans le frontend
-              const date = new Date(s.timestamp).toLocaleTimeString('fr-FR', { 
-                timeZone: 'Africa/Kinshasa', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              });
-              L.marker([s.lat, s.lon], { icon: markerIcon })
-                .addTo(markersGroup)
-                .bindPopup('<b>' + s.rue + '</b><br>🚦 ' + s.etat + '<br>🕐 Heure : ' + date);
+            const points = tracesRues[s.rue];
+            const color = getColor(s.etat);
+            const date = new Date(s.timestamp).toLocaleTimeString('fr-FR', { timeZone: 'Africa/Kinshasa', hour: '2-digit', minute: '2-digit' });
+            
+            if (points && points.length > 0) {
+              // POLYLINE (ligne colorée)
+              L.polyline(points, { color: color, weight: 6, opacity: 0.85 })
+                .addTo(trafficLayer)
+                .bindPopup('<b>' + s.rue + '</b><br>🚦 ' + s.etat + '<br>🕐 ' + date);
+            } else if (s.lat && s.lon) {
+              // FALLBACK (point)
+              L.marker([s.lat, s.lon], {
+                icon: L.divIcon({
+                  html: '<div style="background-color:' + color + ';width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>',
+                  iconSize: [14, 14]
+                })
+              }).addTo(trafficLayer).bindPopup('<b>' + s.rue + '</b> (point)<br>🚦 ' + s.etat + '<br>🕐 ' + date);
             }
           });
         }
@@ -443,13 +573,13 @@ app.post('/webhook', async (c) => {
     await bot.handleUpdate(update);
     return c.text('OK');
   } catch (err) {
-    console.error('Erreur Webhook invocation:', err);
-    return c.text('Internal Server Error', 500);
+    console.error('Erreur webhook:', err);
+    return c.text('Error', 500);
   }
 });
 
 // ==========================================
-// 7. DÉMARRAGE DU SERVEUR ET DU BOT
+// 8. DÉMARRAGE
 // ==========================================
 const PORT = process.env.PORT || 3000;
 serve({ fetch: app.fetch, port: Number(PORT) });
@@ -459,16 +589,15 @@ console.log(`🌍 Serveur Web sur le port ${PORT}`);
   try {
     const hostname = process.env.RENDER_EXTERNAL_HOSTNAME;
     if (hostname) {
-      const url = `https://${hostname}/webhook`;
-      await bot.telegram.setWebhook(url);
-      console.log(`🔗 Webhook configuré sur la plateforme de prod : ${url}`);
+      await bot.telegram.setWebhook(`https://${hostname}/webhook`);
+      console.log(`🔗 Webhook configuré : https://${hostname}/webhook`);
     } else {
       await bot.telegram.deleteWebhook();
       bot.launch();
-      console.log("🤖 Mode Polling actif localement.");
+      console.log("🤖 Mode Polling actif");
     }
   } catch (err) {
-    console.log("⚠️ Échec d'enregistrement Webhook, repli sur le mode Polling :", err.message);
+    console.log("⚠️ Erreur webhook :", err.message);
     bot.launch();
   }
 })();
