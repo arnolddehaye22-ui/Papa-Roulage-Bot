@@ -4,7 +4,7 @@ const Fuse = require('fuse.js');
 const { Hono } = require('hono');
 const { serve } = require('@hono/node-server');
 
-console.log("=== 🚗 PAPA ROULAGE V4.2.5 (POLYLINES - 20 AXES) ===");
+console.log("=== 🚗 PAPA ROULAGE V4.3 (CARTE COMPLÈTE) ===");
 
 // Forçage du fuseau horaire
 process.env.TZ = 'Africa/Kinshasa';
@@ -37,9 +37,7 @@ pool.on('error', (err) => {
         etat TEXT NOT NULL,
         timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         jour TEXT,
-        heure INTEGER,
-        lat DOUBLE PRECISION,
-        lon DOUBLE PRECISION
+        heure INTEGER
       );
       CREATE INDEX IF NOT EXISTS idx_signalements_rue_timestamp ON signalements (rue, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_signalements_stats ON signalements (jour, heure);
@@ -55,7 +53,7 @@ pool.on('error', (err) => {
 // 2. DICTIONNAIRE DES RUES (65 AXES)
 // ==========================================
 const rues = [
-  { nom: "Boulevard du 30 Juin", lat: -4.3225, lon: 15.3112, alias: ["30 juin", "bd du 30", "trente juin", "bld 30", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin", "gombé", "gombe"] },
+  { nom: "Boulevard du 30 Juin", lat: -4.3225, lon: 15.3112, alias: ["30 juin", "bd du 30", "trente juin", "bld 30", "grand boulevard", "socimat", "gare centrale", "royal", "batetela", "kitambo magasin", "gombé", "gombe"] },
   { nom: "Avenue Kasa-Vubu", lat: -4.3281, lon: 15.3156, alias: ["kasa vubu", "kasa", "av kasa", "kasavubu", "rond-point victoire", "victoire", "central", "bandal", "mariage"] },
   { nom: "Boulevard Triomphal", lat: -4.3356, lon: 15.3050, alias: ["triomphal", "bd triomphal", "triomphale", "palais du peuple", "stade des martyrs", "martyrs"] },
   { nom: "Rond-point Ngaba", lat: -4.3844, lon: 15.3475, alias: ["ngaba", "rp ngaba", "rond point ngaba", "triangle", "universite", "université"] },
@@ -234,16 +232,16 @@ function extraireLieu(texte) {
 }
 
 // ==========================================
-// 4. FONCTIONS BASE DE DONNÉES
+// 4. FONCTIONS BASE DE DONNÉES (sans lat/lon)
 // ==========================================
-async function sauvegarderSignalement(rue, etat, lat, lon) {
+async function sauvegarderSignalement(rue, etat) {
   const maintenant = new Date();
   const jour = maintenant.toLocaleDateString('fr-FR', { weekday: 'long', timeZone: 'Africa/Kinshasa' });
   const heure = parseInt(maintenant.toLocaleTimeString('fr-FR', { hour: '2-digit', hour12: false, timeZone: 'Africa/Kinshasa' }));
   try {
     await pool.query(
-      'INSERT INTO signalements (rue, etat, jour, heure, lat, lon) VALUES ($1, $2, $3, $4, $5, $6)',
-      [rue, etat, jour, heure, lat, lon]
+      'INSERT INTO signalements (rue, etat, jour, heure) VALUES ($1, $2, $3, $4)',
+      [rue, etat, jour, heure]
     );
     statsCache = null;
     console.log(`💾 Signalement enregistré : ${rue} → ${etat} (${jour} - ${heure}h)`);
@@ -300,7 +298,7 @@ if (!process.env.BOT_TOKEN) {
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
 bot.start((ctx) => {
-  ctx.reply(`🇨🇩 PAPA ROULAGE V4.2.5 - LIGNES COLORÉES ! 🚗
+  ctx.reply(`🇨🇩 PAPA ROULAGE V4.3 - CARTE COMPLÈTE ! 🚗
 
 📢 POUR SIGNALER (langage naturel) :
 "C'est mort à Socimat"
@@ -308,7 +306,7 @@ bot.start((ctx) => {
 "Ya trop de voitures vers Ngaba"
 
 🔍 CONSULTER : /etat Commerce
-🗺️ CARTE : /carte (lignes colorées!)
+🗺️ CARTE : /carte (20 lignes + 45 points)
 📊 STATS : /stats
 📋 LISTE : /liste`);
 });
@@ -316,6 +314,8 @@ bot.start((ctx) => {
 bot.command('carte', (c) => c.reply(`🗺️ PAPA ROULAGE - CARTE INTERACTIVE
 
 Lignes colorées pour 20 axes prioritaires !
+Points pour les 45 autres axes !
+
 👉 https://${process.env.RENDER_EXTERNAL_HOSTNAME || 'papa-roulage-bot.onrender.com'}/carte`));
 
 bot.command('liste', (ctx) => {
@@ -390,7 +390,7 @@ Ex: "C'est mort à Socimat"
     return;
   }
   if (axe && etat) {
-    await sauvegarderSignalement(axe.nom, etat, axe.lat, axe.lon);
+    await sauvegarderSignalement(axe.nom, etat);
     ctx.reply(`✅ Papa Roulage a compris !
 
 📍 ${axe.nom}
@@ -410,26 +410,29 @@ Exemples :
 });
 
 // ==========================================
-// 7. SERVEUR WEB HONO (CARTE AVEC POLYLINES)
+// 7. SERVEUR WEB HONO (API + CARTE)
 // ==========================================
 const app = new Hono();
 
-app.get('/', (c) => c.text('Papa Roulage V4.2.5 API - Kinshasa running 🇨🇩'));
+app.get('/', (c) => c.text('Papa Roulage V4.3 API - Kinshasa running 🇨🇩'));
 
+// API /trafic (sans lat/lon)
 app.get('/api/trafic', async (c) => {
   try {
     const result = await pool.query(`
-      SELECT DISTINCT ON (rue) rue, etat, timestamp, lat, lon
+      SELECT DISTINCT ON (rue) rue, etat, timestamp
       FROM signalements
       WHERE timestamp > NOW() - INTERVAL '48 hours'
       ORDER BY rue, timestamp DESC
     `);
     return c.json({ success: true, data: result.rows, total: result.rows.length });
   } catch (err) {
+    console.error("❌ Erreur API /trafic :", err.message);
     return c.json({ success: false, error: err.message }, 500);
   }
 });
 
+// Carte avec lignes colorées + fallback points
 app.get('/carte', (c) => {
   const html = `<!DOCTYPE html>
 <html>
@@ -512,14 +515,61 @@ app.get('/carte', (c) => {
       "Rond-point UPN": [[-4.3600,15.2320],[-4.3650,15.2350],[-4.3700,15.2380]],
       "Carrefour Ngaliema": [[-4.3450,15.2720],[-4.3500,15.2750],[-4.3550,15.2780]],
       "Marché Central": [[-4.3160,15.3080],[-4.3180,15.3100],[-4.3220,15.3120]],
-      "Avenue du Commerce": [[-4.3180,15.3080],[-4.3200,15.3100],[-4.3220,15.3120]],
       "Carrefour Lemba": [[-4.3650,15.3300],[-4.3700,15.3350],[-4.3750,15.3400]],
       "Rond-point Kintambo": [[-4.3100,15.2920],[-4.3150,15.2950],[-4.3200,15.2980]],
       "Stade des Martyrs": [[-4.3320,15.3020],[-4.3356,15.3050],[-4.3400,15.3080]],
       "Tour de l'Échangeur": [[-4.3350,15.3450],[-4.3400,15.3500],[-4.3450,15.3550]],
       "Beach Ngobila": [[-4.3120,15.3020],[-4.3150,15.3050],[-4.3180,15.3080]],
       "Croisement Diplomate": [[-4.3200,15.3110],[-4.3220,15.3130],[-4.3240,15.3150]],
-      "Rond-point Forescom": [[-4.3280,15.3140],[-4.3320,15.3160],[-4.3360,15.3180]]
+      "Rond-point Forescom": [[-4.3280,15.3140],[-4.3320,15.3160],[-4.3360,15.3180]],
+      "Avenue du Commerce": [[-4.3180,15.3080],[-4.3200,15.3100],[-4.3220,15.3120]]
+    };
+
+    // POINTS CENTRAUX POUR LES 45 AUTRES AXES
+    const pointsCentraux = {
+      "Avenue Kimwenza": [-4.3950, 15.3450],
+      "Boulevard Congo Japon (Poids Lourds)": [-4.3100, 15.3000],
+      "Avenue du Tourisme (Route de Kinsuka)": [-4.3400, 15.2000],
+      "Avenue de la Justice": [-4.3250, 15.3120],
+      "Avenue des Huileries": [-4.3300, 15.3180],
+      "Avenue Wangata": [-4.3350, 15.3220],
+      "Avenue Flambeau": [-4.3380, 15.3250],
+      "Avenue de l'École": [-4.3420, 15.3280],
+      "Avenue du Port": [-4.3150, 15.3050],
+      "Safricas": [-4.3420, 15.3540],
+      "Asanef": [-4.3380, 15.3480],
+      "Carrefour Camp Luka": [-4.3580, 15.2600],
+      "Avenue ISTM": [-4.3300, 15.3180],
+      "Petro Congo": [-4.3225, 15.3115],
+      "Carrefour Kingabwa": [-4.3100, 15.2980],
+      "Avenue Sendwe": [-4.3180, 15.3020],
+      "Carrefour Zando": [-4.3260, 15.3160],
+      "Rond-point Camp Kokolo": [-4.3500, 15.2750],
+      "Rond-point Société": [-4.3220, 15.3120],
+      "Marché de la Liberté": [-4.3550, 15.2900],
+      "Marché Gambela": [-4.3600, 15.2850],
+      "Marché de Matonge": [-4.3280, 15.3180],
+      "Marché de Ndjili": [-4.3450, 15.3550],
+      "Clinique Ngaliema": [-4.3520, 15.2700],
+      "Hôpital du Cinquantenaire": [-4.3350, 15.3080],
+      "Hôpital de l'ONATRA": [-4.3220, 15.3120],
+      "Clinique Kinoise": [-4.3280, 15.3150],
+      "INSS": [-4.3300, 15.3100],
+      "ISTA": [-4.3800, 15.3450],
+      "ISC": [-4.3350, 15.3200],
+      "Lycée Bosangani": [-4.3380, 15.3220],
+      "Collège Boboto": [-4.3400, 15.3250],
+      "Carrefour Mbanza Lemba": [-4.3750, 15.3400],
+      "Carrefour Kingasani": [-4.3450, 15.3480],
+      "Carrefour Masina": [-4.3500, 15.3600],
+      "Rond-point Kampeta": [-4.3220, 15.3080],
+      "Rond-point Righini": [-4.3350, 15.3050],
+      "Rond-point Mwana Mbuyi": [-4.3400, 15.3100],
+      "Rond-point Sozacom": [-4.3480, 15.3150],
+      "Stade Tata Raphaël": [-4.3280, 15.3120],
+      "Palais de la Nation": [-4.3250, 15.3100],
+      "Gare de Limete": [-4.3420, 15.3520],
+      "Kinshasa Golf": [-4.3550, 15.2800]
     };
 
     function getColor(etat) {
@@ -534,31 +584,43 @@ app.get('/carte', (c) => {
       try {
         const res = await fetch('/api/trafic');
         const json = await res.json();
-        if (json.success) {
+        console.log("📊 Données reçues:", json.total, "signalements");
+        
+        if (json.success && json.data.length > 0) {
           trafficLayer.clearLayers();
+          
           json.data.forEach(s => {
-            const points = tracesRues[s.rue];
             const color = getColor(s.etat);
-            const date = new Date(s.timestamp).toLocaleTimeString('fr-FR', { timeZone: 'Africa/Kinshasa', hour: '2-digit', minute: '2-digit' });
+            const date = new Date(s.timestamp).toLocaleTimeString('fr-FR', { 
+              timeZone: 'Africa/Kinshasa', 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            });
             
+            // CAS 1 : Ligne tracée
+            const points = tracesRues[s.rue];
             if (points && points.length > 0) {
-              // POLYLINE (ligne colorée)
               L.polyline(points, { color: color, weight: 6, opacity: 0.85 })
                 .addTo(trafficLayer)
                 .bindPopup('<b>' + s.rue + '</b><br>🚦 ' + s.etat + '<br>🕐 ' + date);
-            } else if (s.lat && s.lon) {
-              // FALLBACK (point)
-              L.marker([s.lat, s.lon], {
-                icon: L.divIcon({
-                  html: '<div style="background-color:' + color + ';width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>',
-                  iconSize: [14, 14]
-                })
-              }).addTo(trafficLayer).bindPopup('<b>' + s.rue + '</b> (point)<br>🚦 ' + s.etat + '<br>🕐 ' + date);
+            } 
+            // CAS 2 : Point central
+            else {
+              const coords = pointsCentraux[s.rue];
+              if (coords) {
+                L.marker(coords, {
+                  icon: L.divIcon({
+                    html: '<div style="background-color:' + color + ';width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>',
+                    iconSize: [14, 14]
+                  })
+                }).addTo(trafficLayer).bindPopup('<b>' + s.rue + '</b><br>🚦 ' + s.etat + '<br>🕐 ' + date);
+              }
             }
           });
         }
-      } catch(e) { console.error(e); }
+      } catch(e) { console.error("❌ Erreur:", e); }
     }
+    
     updateData();
     setInterval(updateData, 20000);
   </script>
